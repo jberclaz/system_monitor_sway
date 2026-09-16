@@ -2,6 +2,8 @@
 
 Stacked CPU, memory, and network graphs for **Sway**, matching [gnome-shell-system-monitor-applet](https://github.com/paradoxxxzero/gnome-shell-system-monitor-applet). A small overlay sits in the **center of Waybar**. GNOME is not required.
 
+![screenshot](example.png)
+
 ## Install
 
 ### 1. Packages
@@ -14,7 +16,7 @@ sudo apt install python3 python3-gi gir1.2-gtop-2.0 libgtk-layer-shell0 gir1.2-g
 
 Install **both** `libgtk-layer-shell0` and `gir1.2-gtklayershell-0.1` (Python needs the GIR package).
 
-Arch: `sudo pacman -S python python-gobject libgtop gtk-layer-shell`  
+Arch: `sudo pacman -S python python-gobject libgtop gtk-layer-shell`
 Fedora: `sudo dnf install python3-gobject libgtop gtk-layer-shell`
 
 ### 2. Program
