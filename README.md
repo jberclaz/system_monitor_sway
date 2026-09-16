@@ -122,14 +122,22 @@ system-monitor-sway --self-check
 
 ### 4. Waybar
 
-Match `bar_height` in your config (default **30**). Leave **`modules-center`** empty.
+**`bar_height` must equal Waybar’s `"height"`**. Leave **`modules-center`** empty.
+
+The monitor must be a **layer-shell** surface overlapping the bar. Sway insets that surface by Waybar’s exclusive zone; the app applies a top margin of **`-bar_height`** automatically. You do not need `layer_shell_margin_top` in config unless Waybar’s reserved height differs from `bar_height`.
 
 ```jsonc
 "position": "top",
+"layer": "top",
 "height": 30,
-"modules-center": [],
-"modules-right": ["clock", "network", "pulseaudio", "tray"]
+"modules-center": []
 ```
+
+Monitor: `"layer_shell_layer": "overlay"`, `"bar_height": 30`.
+
+On start, stderr should show `debug: layer_window=True screen=(…,0)`. If `layer_window=False` or screen y is about 30, it is still a normal window.
+
+No Waybar CSS changes are required for this Y-position bug.
 
 ### 5. Sway autostart
 
@@ -141,6 +149,18 @@ exec system-monitor-sway
 ```
 
 Reload: `swaymsg reload`.
+
+### Testing from a terminal
+
+Run the same command Sway will use (from a **Sway** session, not SSH without `WAYLAND_DISPLAY`):
+
+```bash
+system-monitor-sway
+# or, from a checkout:
+python3 /path/to/system_monitor_sway/system_monitor_sway.py -c ~/.config/system-monitor-sway/config.json
+```
+
+Watch stderr for `bar_height=… layer=top` and the path to `waybar-transparent-center.css`. Stop with **Ctrl+C** before starting another copy (only one instance should run). When it looks right, add the `exec` line to `sway/config` and drop the manual terminal start.
 
 ---
 
@@ -154,7 +174,7 @@ Edit `~/.config/system-monitor-sway/config.json` (after copying from share). Def
 | memory | on, 5000 ms | greens |
 | net | on, 1000 ms | yellow / magenta stack |
 
-Keys: per-element `display`, `label`, `show_label`, `style`, `refresh_ms`, `position`, `colors`, `graph_width`; global `bar_height`, `graph_height`, `background`, `element_spacing`, `layer_shell_layer` (`overlay` draws above Waybar).
+Keys: per-element `display`, `label`, `show_label`, `style`, `refresh_ms`, `position`, `colors`, `graph_width`; global `bar_height` (match Waybar height; top margin is `-bar_height` unless you set `layer_shell_margin_top`), `background`, `element_spacing`, `layer_shell_layer` (`overlay`), `show_tooltip` (hover details like the GNOME applet; default true), `tooltip_delay_ms` (wait before showing; default 1000).
 
 ## Verify (development)
 

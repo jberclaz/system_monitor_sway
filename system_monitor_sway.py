@@ -16,6 +16,10 @@ from pathlib import Path
 
 APP_NAME = "system-monitor-sway"
 
+# gtk-layer-shell is Wayland-only. If GTK picks X11/XWayland, Sway treats the
+# window as a normal client and places it in the workspace below Waybar.
+os.environ.setdefault("GDK_BACKEND", "wayland")
+
 import gi
 
 gi.require_version("Gdk", "3.0")
@@ -39,20 +43,74 @@ from collectors import CpuCollector, MemoryCollector, NetCollector  # noqa: E402
 CSS = """
 window {
     background-color: transparent;
+    padding: 0;
+    margin: 0;
 }
 .sm-bar {
     background-color: transparent;
+    padding: 0;
+    margin: 0;
 }
 .sm-status-label {
     color: #bbbbbb;
     font-size: 10px;
-    padding-top: 5px;
+    padding: 0;
+    margin: 0;
     font-family: monospace;
 }
 .sm-chart {
     padding: 0 2px;
 }
+.sm-row {
+    padding: 0;
+    margin: 0;
+}
+popover.sm-tooltip, popover.sm-tooltip > contents {
+    background-color: rgba(10, 10, 10, 0.85);
+    border: 1px solid #a5a5a5;
+    border-radius: 5px;
+    padding: 3px;
+}
+.sm-tooltip-label {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 11px;
+    font-weight: bold;
+    font-family: monospace;
+    padding: 2px 6px;
+}
 """
+
+
+def _net_rate(kib_s: float) -> tuple[str, str]:
+    v = float(kib_s)
+    if v < 1024:
+        return str(int(round(v))), "KiB/s"
+    if v < 1048576:
+        return f"{(v / 1024):.3g}", "MiB/s"
+    return f"{(v / 1048576):.3g}", "GiB/s"
+
+
+def format_cpu_tip(vals: list[float]) -> str:
+    names = ("user", "system", "nice", "iowait", "other")
+    return "\n".join(f"{n}  {int(round(v))} %" for n, v in zip(names, vals))
+
+
+def format_mem_tip(vals: list[float]) -> str:
+    names = ("program", "buffer", "cache")
+    return "\n".join(f"{n}  {int(round(v * 100))} %" for n, v in zip(names, vals))
+
+
+def format_net_tip(usage: list[float]) -> str:
+    down, up = _net_rate(usage[0]), _net_rate(usage[2])
+    return "\n".join(
+        (
+            f"down  {down[0]} {down[1]}",
+            f"downerrors  {int(usage[1])} /s",
+            f"up  {up[0]} {up[1]}",
+            f"uperrors  {int(usage[3])} /s",
+            f"collisions  {int(usage[4])} /s",
+        )
+    )
 
 
 class ChartArea(Gtk.DrawingArea):
@@ -78,29 +136,42 @@ class ChartArea(Gtk.DrawingArea):
         self.queue_draw()
 
 
-class MonitorElement(Gtk.Box):
+class MonitorElement(Gtk.EventBox):
     def __init__(
         self,
         name: str,
         cfg: dict,
-        graph_height: int,
+        chart_height: int,
         bg_rgba: tuple[float, float, float, float],
         scale: float,
+        *,
+        show_tooltip: bool = True,
+        tooltip_delay_ms: int = 1000,
     ) -> None:
-        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        super().__init__()
+        self.set_visible_window(False)
+        self.set_above_child(True)
+        self.get_style_context().add_class("sm-row")
+        self.set_valign(Gtk.Align.CENTER)
         self.name = name
         self.cfg = cfg
         self._scale = scale
+        self._tip_text = ""
+        self._tooltip_delay_ms = max(0, int(tooltip_delay_ms))
+        self._show_id = 0
         style = cfg.get("style", "graph")
         show_label = cfg.get("show_label", True)
         width = int(cfg.get("graph_width", 100))
+
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        self.add(row)
 
         if show_label:
             lbl = Gtk.Label(label=cfg.get("label", name))
             lbl.set_halign(Gtk.Align.CENTER)
             lbl.set_valign(Gtk.Align.CENTER)
             lbl.get_style_context().add_class("sm-status-label")
-            self.pack_start(lbl, False, False, 0)
+            row.pack_start(lbl, False, False, 0)
 
         fixed_max = None
         if name == "cpu":
@@ -115,17 +186,185 @@ class MonitorElement(Gtk.Box):
 
         self._chart = StackedChart(
             width,
-            graph_height,
+            chart_height,
             cfg.get("colors", ["#888888"]),
             fixed_max=fixed_max,
             scale_factor=scale,
         )
-        self._chart_area = ChartArea(self._chart, bg_rgba, width, graph_height)
+        self._chart_area = ChartArea(self._chart, bg_rgba, width, chart_height)
         if style in ("graph", "both"):
-            self.pack_start(self._chart_area, False, False, 0)
+            row.pack_start(self._chart_area, False, False, 0)
+
+        self._pop = None
+        if show_tooltip:
+            self._tip_label = Gtk.Label(label="")
+            self._tip_label.set_xalign(0.0)
+            self._tip_label.get_style_context().add_class("sm-tooltip-label")
+            self._pop = Gtk.Popover.new(self)
+            self._pop.set_modal(False)
+            # Default constrain-to-window flips the popover above a 30px bar
+            # (off-screen). Let it hang below the strip into the workspace.
+            try:
+                self._pop.set_constrain_to(Gtk.PopoverConstraint.NONE)
+            except (AttributeError, TypeError):
+                pass
+            self._pop.set_position(Gtk.PositionType.BOTTOM)
+            self._pop.get_style_context().add_class("sm-tooltip")
+            self._pop.add(self._tip_label)
+            self._tip_label.show()
+            self._poll_id = 0
+            self._miss = 0
+            self.add_events(
+                Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK
+            )
+            self.connect("enter-notify-event", self._on_enter)
+            self.connect("leave-notify-event", self._on_leave)
+
         self._timeout_id = 0
         refresh = max(500, int(cfg.get("refresh_ms", 2000)))
         self._timeout_id = GLib.timeout_add(refresh, self._tick)
+
+    def _set_tip(self, text: str) -> None:
+        self._tip_text = text
+        if self._pop is not None:
+            self._tip_label.set_text(text)
+
+    def _on_enter(self, _widget, event) -> bool:
+        if event.detail == Gdk.NotifyType.INFERIOR:
+            return False
+        self._miss = 0
+        if self._pop is None or not self._tip_text:
+            return False
+        if self._pop.get_mapped():
+            return False
+        if self._show_id:
+            return False
+        delay = self._tooltip_delay_ms
+        if delay <= 0:
+            self._popup_tip()
+        else:
+            self._show_id = GLib.timeout_add(delay, self._popup_tip)
+        return False
+
+    def _popup_tip(self) -> bool:
+        self._show_id = 0
+        if self._pop is None or not self._tip_text:
+            return False
+        if not self._pointer_on_graph_or_tip():
+            return False
+        self._pop.set_position(Gtk.PositionType.BOTTOM)
+        self._pop.popup()
+        self._start_poll()
+        return False
+
+    def _cancel_show(self) -> None:
+        if self._show_id:
+            GLib.source_remove(self._show_id)
+            self._show_id = 0
+
+    def _on_leave(self, _widget, event) -> bool:
+        if event.detail == Gdk.NotifyType.INFERIOR:
+            return False
+        if event.mode == Gdk.CrossingMode.GRAB:
+            return False
+        self._cancel_show()
+        self._miss = 2
+        return False
+
+    def _start_poll(self) -> None:
+        if not getattr(self, "_poll_id", 0):
+            self._miss = 0
+            self._poll_id = GLib.timeout_add(80, self._poll_pointer)
+
+    def _poll_pointer(self) -> bool:
+        if self._pop is None or not self._pop.get_mapped():
+            self._poll_id = 0
+            return False
+        if self._pointer_on_graph_or_tip():
+            self._miss = 0
+            return True
+        self._miss += 1
+        if self._miss >= 3:
+            self._pop.popdown()
+            self._poll_id = 0
+            self._miss = 0
+            return False
+        return True
+
+    def _pointer_on_graph_or_tip(self) -> bool:
+        display = self.get_display()
+        seat = display.get_default_seat() if display else None
+        if seat is None:
+            return False
+        try:
+            at = seat.get_pointer().get_window_at_position()
+        except TypeError:
+            return False
+        win, x, y = self._split_window_at(at)
+        if win is None:
+            return False
+        if self._window_in_widget(win, self._pop) or self._window_in_widget(
+            win, self._tip_label
+        ):
+            return True
+        top = self.get_toplevel()
+        if not self._window_in_widget(win, top):
+            return False
+        tx, ty = self._to_toplevel_xy(win, x, y, top)
+        if tx is None:
+            return False
+        origin = self.translate_coordinates(top, 0, 0)
+        if origin is None:
+            return False
+        ox, oy = int(origin[0]), int(origin[1])
+        alloc = self.get_allocation()
+        return ox <= tx < ox + alloc.width and oy <= ty < oy + alloc.height
+
+    def _split_window_at(self, at):
+        if not at:
+            return None, 0, 0
+        if not isinstance(at, tuple):
+            return at, 0, 0
+        if len(at) >= 3:
+            return at[0], int(at[1]), int(at[2])
+        if len(at) == 2:
+            return at[0], int(at[1]), 0
+        return at[0], 0, 0
+
+    def _to_toplevel_xy(self, gdk_win, x: int, y: int, top) -> tuple[int | None, int | None]:
+        topw = top.get_window() if top else None
+        if topw is None:
+            return None, None
+        tx, ty = x, y
+        cur = gdk_win
+        while cur is not None and cur != topw:
+            get_pos = getattr(cur, "get_position", None)
+            if get_pos is not None:
+                try:
+                    pos = get_pos()
+                    tx += int(pos[0])
+                    ty += int(pos[1])
+                except (TypeError, IndexError, ValueError):
+                    pass
+            parent = getattr(cur, "get_parent", None)
+            cur = parent() if parent else None
+        if cur != topw:
+            return None, None
+        return tx, ty
+
+    def _window_in_widget(self, gdk_win, widget) -> bool:
+        if widget is None or not widget.get_realized():
+            return False
+        root = widget.get_window()
+        if root is None:
+            return False
+        cur = gdk_win
+        while cur is not None:
+            if cur == root:
+                return True
+            parent = getattr(cur, "get_parent", None)
+            cur = parent() if parent else None
+        return False
 
     def _tick(self) -> bool:
         if self.name == "cpu":
@@ -133,10 +372,13 @@ class MonitorElement(Gtk.Box):
             if result is None:
                 return True
             vals, _pct = result
+            self._set_tip(format_cpu_tip(vals))
         elif self.name == "memory":
             vals = self._collector.sample()  # type: ignore[union-attr]
+            self._set_tip(format_mem_tip(vals))
         else:
             vals = self._collector.sample()  # type: ignore[union-attr]
+            self._set_tip(format_net_tip(vals))
         self._chart.push(vals)
         self._chart_area.refresh()
         return True
@@ -204,15 +446,124 @@ def layer_shell_install_help() -> str:
     )
 
 
+def estimate_content_width(
+    enabled: list[tuple[str, dict]], spacing: int, *, label_px: int = 22
+) -> int:
+    total = 0
+    for i, (_name, el_cfg) in enumerate(enabled):
+        if i:
+            total += spacing
+        if el_cfg.get("show_label", True):
+            total += label_px
+        total += int(el_cfg.get("graph_width", 100))
+    return total
+
+
+def output_width() -> int:
+    display = Gdk.Display.get_default()
+    if not display:
+        return 1920
+    monitor = display.get_primary_monitor() or display.get_monitor(0)
+    return monitor.get_geometry().width if monitor else 1920
+
+
+def output_scale() -> int:
+    display = Gdk.Display.get_default()
+    if not display:
+        return 1
+    monitor = display.get_primary_monitor() or display.get_monitor(0)
+    return int(monitor.get_scale_factor()) if monitor else 1
+
+
+def screen_origin(gdk_win) -> tuple[int, int]:
+    """GTK3 get_origin() is (ok, x, y); some bindings return (x, y)."""
+    if gdk_win is None:
+        return -1, -1
+    result = gdk_win.get_origin()
+    if len(result) == 3:
+        _ok, x, y = result
+        return int(x), int(y)
+    if len(result) == 2:
+        return int(result[0]), int(result[1])
+    return -1, -1
+
+
+def apply_layer_placement(
+    win: Gtk.Window,
+    cfg: dict,
+    *,
+    bar_height: int,
+    content_width: int,
+) -> None:
+    """Must run before the window is realized (gtk-layer-shell requirement)."""
+    # Sway insets top-anchored layer surfaces by Waybar's exclusive zone.
+    # Default: pull up by bar_height. Optional override for padding mismatch.
+    if "layer_shell_margin_top" in cfg:
+        margin_top = int(cfg["layer_shell_margin_top"])
+        if margin_top == 0:
+            margin_top = -bar_height
+    else:
+        margin_top = -bar_height
+    margin_h = max(0, (output_width() - content_width) // 2)
+    GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.TOP, True)
+    GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.BOTTOM, False)
+    GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.LEFT, True)
+    GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.RIGHT, True)
+    GtkLayerShell.set_margin(win, GtkLayerShell.Edge.TOP, margin_top)
+    GtkLayerShell.set_margin(win, GtkLayerShell.Edge.BOTTOM, 0)
+    GtkLayerShell.set_margin(win, GtkLayerShell.Edge.LEFT, margin_h)
+    GtkLayerShell.set_margin(win, GtkLayerShell.Edge.RIGHT, margin_h)
+    win.set_size_request(content_width, bar_height)
+
+
+def log_window_placement(win: Gtk.Window) -> bool:
+    alloc = win.get_allocation()
+    ox, oy = screen_origin(win.get_window())
+    is_layer = bool(GtkLayerShell and GtkLayerShell.is_layer_window(win))
+    sys.stderr.write(
+        f"debug: layer_window={is_layer} screen=({ox},{oy}) "
+        f"size={alloc.width}x{alloc.height}\n"
+    )
+    if not is_layer:
+        sys.stderr.write(
+            "debug: not a layer-shell surface — Sway treats it as a normal window "
+            "and places it below Waybar (top of the workspace).\n"
+        )
+    elif oy > 5:
+        sys.stderr.write(
+            f"debug: screen y={oy} should be 0 for a top-anchored layer surface.\n"
+        )
+    return False
+
+
 def build_window(cfg: dict) -> Gtk.Window:
     if not HAS_LAYER:
         sys.stderr.write(layer_shell_install_help())
         sys.exit(1)
 
     bar_height = int(cfg.get("bar_height", 30))
-    graph_height = int(cfg.get("graph_height", 22))
+    chart_height = bar_height
     spacing = int(cfg.get("element_spacing", 4))
     bg = parse_color(cfg.get("background", "#ffffff16"))
+    elements_cfg = cfg.get("elements", {})
+    enabled = [
+        (name, elements_cfg[name])
+        for name in sorted(
+            elements_cfg,
+            key=lambda n: int(elements_cfg[n].get("position", 99)),
+        )
+        if elements_cfg[name].get("display", True)
+    ]
+    content_width = estimate_content_width(enabled, spacing)
+
+    supported = getattr(GtkLayerShell, "is_supported", lambda: True)()
+    if not supported:
+        sys.stderr.write(
+            "gtk-layer-shell is not supported in this session "
+            "(need Wayland + wlr-layer-shell). The window would appear in the "
+            "workspace below Waybar.\n"
+        )
+        sys.exit(1)
 
     win = Gtk.Window()
     win.set_title("system-monitor-sway")
@@ -220,6 +571,8 @@ def build_window(cfg: dict) -> Gtk.Window:
     win.set_resizable(False)
     win.set_app_paintable(True)
 
+    # gtk-layer-shell: init + anchors before realize/show, or GTK maps an
+    # xdg-toplevel and Sway puts it in the usable area (below Waybar).
     GtkLayerShell.init_for_window(win)
     layer_name = str(cfg.get("layer_shell_layer", "overlay")).lower()
     layer = {
@@ -231,12 +584,20 @@ def build_window(cfg: dict) -> Gtk.Window:
     GtkLayerShell.set_layer(win, layer)
     GtkLayerShell.set_namespace(win, "system-monitor-sway")
     GtkLayerShell.set_exclusive_zone(win, 0)
-    for edge in (
-        GtkLayerShell.Edge.TOP,
-        GtkLayerShell.Edge.LEFT,
-        GtkLayerShell.Edge.RIGHT,
-    ):
-        GtkLayerShell.set_anchor(win, edge, True)
+    try:
+        GtkLayerShell.set_keyboard_mode(win, GtkLayerShell.KeyboardMode.NONE)
+    except (AttributeError, TypeError):
+        try:
+            GtkLayerShell.set_keyboard_interactivity(win, False)
+        except (AttributeError, TypeError):
+            pass
+
+    apply_layer_placement(win, cfg, bar_height=bar_height, content_width=content_width)
+    margin = getattr(GtkLayerShell, "get_margin", lambda *_: "?")(win, GtkLayerShell.Edge.TOP)
+    sys.stderr.write(
+        f"debug: after init layer_window={GtkLayerShell.is_layer_window(win)} "
+        f"GDK_BACKEND={os.environ.get('GDK_BACKEND')!r} margin_top={margin}\n"
+    )
 
     provider = Gtk.CssProvider()
     provider.load_from_data(CSS.encode())
@@ -246,31 +607,40 @@ def build_window(cfg: dict) -> Gtk.Window:
         Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
     )
 
-    scale = win.get_scale_factor()
+    scale = output_scale()
     outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
     outer.get_style_context().add_class("sm-bar")
+    outer.set_size_request(-1, bar_height)
+    outer.set_vexpand(False)
     inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=spacing)
     inner.set_halign(Gtk.Align.CENTER)
     inner.set_valign(Gtk.Align.CENTER)
-    outer.pack_start(inner, True, True, 0)
+    inner.set_vexpand(False)
+    outer.pack_start(inner, False, False, 0)
     win.add(outer)
 
-    elements_cfg = cfg.get("elements", {})
-    enabled = [
-        (name, elements_cfg[name])
-        for name in sorted(
-            elements_cfg,
-            key=lambda n: int(elements_cfg[n].get("position", 99)),
-        )
-        if elements_cfg[name].get("display", True)
-    ]
-
+    show_tooltip = bool(cfg.get("show_tooltip", True))
+    tooltip_delay_ms = int(cfg.get("tooltip_delay_ms", 1000))
     for name, el_cfg in enabled:
-        el = MonitorElement(name, el_cfg, graph_height, bg, float(scale))
+        el = MonitorElement(
+            name,
+            el_cfg,
+            chart_height,
+            bg,
+            float(scale),
+            show_tooltip=show_tooltip,
+            tooltip_delay_ms=tooltip_delay_ms,
+        )
         inner.pack_start(el, False, False, 0)
 
+    outer.set_size_request(content_width, bar_height)
+
+    win.connect("map-event", lambda *_: GLib.idle_add(log_window_placement, win))
     win.show_all()
-    win.set_size_request(-1, bar_height)
+    sys.stderr.write(
+        f"system-monitor-sway: bar_height={bar_height} width={content_width} "
+        f"layer={layer_name}\n"
+    )
     return win
 
 
@@ -294,6 +664,12 @@ def main() -> None:
 
         _self_check()
         CpuCollector()
+        cpu_tip = format_cpu_tip([10.0, 5.0, 0.0, 2.0, 3.0])
+        assert "user  10 %" in cpu_tip and "iowait  2 %" in cpu_tip
+        mem_tip = format_mem_tip([0.35, 0.05, 0.2])
+        assert "program  35 %" in mem_tip
+        net_tip = format_net_tip([512.0, 0.0, 2048.0, 0.0, 0.0])
+        assert "KiB/s" in net_tip and "MiB/s" in net_tip
         print("self-check ok")
         return
 

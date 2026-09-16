@@ -1,0 +1,19 @@
+/* Waybar: opaque left/right, transparent center for system-monitor-sway behind the bar.
+ * Include from waybar style.css (see README). Reload waybar after edit.
+ *
+ * Monitor: "layer_shell_layer": "top" (same as Waybar "layer": "top").
+ */
+
+window#waybar {
+    background: transparent;
+}
+
+window#waybar > box {
+    background: rgba(40, 44, 52, 0.92);
+}
+
+/* center module box — adjust nth-child if your theme orders boxes differently */
+window#waybar > box:nth-child(2) {
+    background: transparent;
+    min-width: 380px;
+}
