@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright (C) 2026 Jerome Berclaz
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Install under PREFIX (default /usr/local). Example: ./install.sh "$HOME/.local"
 set -e
 PREFIX="${1:-/usr/local}"

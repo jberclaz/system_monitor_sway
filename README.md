@@ -80,4 +80,6 @@ Not ported: applet popup menu, disk, battery, thermal, GPU.
 
 ## License
 
+GPL-3.0-or-later — see [LICENSE](LICENSE).
+
 Chart logic derived from gnome-shell-system-monitor-applet (GPL-3.0).
