@@ -31,14 +31,28 @@ Match `bar_height` in that config to Waybar’s `"height"` (both default `30`). 
 
 ### 3. Autostart
 
-In `~/.config/sway/config`, after Waybar:
+Put this in `~/.config/sway/config` in the **autostart / `exec` section** (same place as Waybar, mako, etc.). Not inside a `bar { }` block.
+
+Use a **full path** (Sway’s `PATH` is often shorter than your terminal’s):
 
 ```bash
-exec_always waybar
-exec system-monitor-sway
+exec waybar
+exec /usr/local/bin/system-monitor-sway
 ```
 
-Then `swaymsg reload`. Test from a terminal in Sway with `system-monitor-sway` (Ctrl+C to quit).
+If you installed with `./install.sh "$HOME/.local"`:
+
+```bash
+exec /home/YOU/.local/bin/system-monitor-sway
+```
+
+`exec` runs **once at login**, not on `swaymsg reload`. After adding the line, either log out/in or:
+
+```bash
+swaymsg exec /usr/local/bin/system-monitor-sway
+```
+
+Do **not** use `exec_always` for the monitor unless you `pkill` it first — reload would start a second copy. `exec_always waybar` for Waybar is fine.
 
 ## Configure
 
