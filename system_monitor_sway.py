@@ -386,6 +386,13 @@ class MonitorElement(Gtk.EventBox):
     def destroy_element(self) -> None:
         if self._timeout_id:
             GLib.source_remove(self._timeout_id)
+            self._timeout_id = 0
+        if getattr(self, "_show_id", 0):
+            GLib.source_remove(self._show_id)
+            self._show_id = 0
+        if getattr(self, "_poll_id", 0):
+            GLib.source_remove(self._poll_id)
+            self._poll_id = 0
 
 
 def config_search_paths() -> list[Path]:
@@ -517,6 +524,8 @@ def apply_layer_placement(
 
 
 def log_window_placement(win: Gtk.Window) -> bool:
+    if not os.environ.get("SYSTEM_MONITOR_SWAY_DEBUG"):
+        return False
     alloc = win.get_allocation()
     ox, oy = screen_origin(win.get_window())
     is_layer = bool(GtkLayerShell and GtkLayerShell.is_layer_window(win))
@@ -593,11 +602,14 @@ def build_window(cfg: dict) -> Gtk.Window:
             pass
 
     apply_layer_placement(win, cfg, bar_height=bar_height, content_width=content_width)
-    margin = getattr(GtkLayerShell, "get_margin", lambda *_: "?")(win, GtkLayerShell.Edge.TOP)
-    sys.stderr.write(
-        f"debug: after init layer_window={GtkLayerShell.is_layer_window(win)} "
-        f"GDK_BACKEND={os.environ.get('GDK_BACKEND')!r} margin_top={margin}\n"
-    )
+    if os.environ.get("SYSTEM_MONITOR_SWAY_DEBUG"):
+        margin = getattr(GtkLayerShell, "get_margin", lambda *_: "?")(
+            win, GtkLayerShell.Edge.TOP
+        )
+        sys.stderr.write(
+            f"debug: after init layer_window={GtkLayerShell.is_layer_window(win)} "
+            f"GDK_BACKEND={os.environ.get('GDK_BACKEND')!r} margin_top={margin}\n"
+        )
 
     provider = Gtk.CssProvider()
     provider.load_from_data(CSS.encode())
