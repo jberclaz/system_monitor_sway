@@ -188,7 +188,21 @@ def png_sha256(path: Path) -> str:
 
 
 def verify_collectors_smoke() -> None:
-    from collectors import CpuCollector, MemoryCollector, NetCollector
+    from collectors import (
+        BatteryCollector,
+        CpuCollector,
+        DiskCollector,
+        FanCollector,
+        FreqCollector,
+        GpuCollector,
+        MemoryCollector,
+        NetCollector,
+        SwapCollector,
+        ThermalCollector,
+        disk_rate,
+        gpu_chart_vals,
+        millidegree_c,
+    )
 
     cpu = CpuCollector()
     mem = MemoryCollector()
@@ -205,6 +219,23 @@ def verify_collectors_smoke() -> None:
     assert len(m) == 3 and all(0 <= x <= 1 for x in m)
     n = net.sample()
     assert len(n) == 5
+    swap = SwapCollector().sample()
+    assert len(swap) == 1 and 0 <= swap[0] <= 1
+    disk = DiskCollector().sample()
+    assert len(disk) == 2
+    freq = FreqCollector().sample()
+    assert len(freq) == 1 and freq[0] >= 0
+    thermal = ThermalCollector().sample()
+    assert len(thermal) == 1
+    fan = FanCollector().sample()
+    assert len(fan) == 1 and fan[0] >= 0
+    gpu = GpuCollector().sample()
+    assert len(gpu) == 2
+    batt = BatteryCollector().sample()
+    assert len(batt) == 1 and 0 <= batt[0] <= 100
+    assert millidegree_c(45000) == 45
+    assert abs(disk_rate(8192, 1.0) - 1.0) < 1e-9
+    assert gpu_chart_vals(20, 1024, 4096) == [20.0, 5.0]
 
 
 def main() -> int:

@@ -53,7 +53,23 @@ except (ValueError, ImportError) as exc:
     LAYER_IMPORT_ERROR = str(exc)
 
 from chart import StackedChart, parse_color  # noqa: E402
-from collectors import CpuCollector, MemoryCollector, NetCollector  # noqa: E402
+from collectors import (  # noqa: E402
+    FAN_SENSOR_DEFAULT,
+    THERMAL_SENSOR_DEFAULT,
+    BatteryCollector,
+    CpuCollector,
+    DiskCollector,
+    FanCollector,
+    FreqCollector,
+    GpuCollector,
+    MemoryCollector,
+    NetCollector,
+    SwapCollector,
+    ThermalCollector,
+    disk_rate,
+    gpu_chart_vals,
+    millidegree_c,
+)
 
 CSS = """
 window {
@@ -105,17 +121,17 @@ def _net_rate(kib_s: float) -> tuple[str, str]:
     return f"{(v / 1048576):.3g}", "GiB/s"
 
 
-def format_cpu_tip(vals: list[float]) -> str:
+def format_cpu_tip(vals: list[float], _col=None) -> str:
     names = ("user", "system", "nice", "iowait", "other")
     return "\n".join(f"{n}  {int(round(v))} %" for n, v in zip(names, vals))
 
 
-def format_mem_tip(vals: list[float]) -> str:
+def format_mem_tip(vals: list[float], _col=None) -> str:
     names = ("program", "buffer", "cache")
     return "\n".join(f"{n}  {int(round(v * 100))} %" for n, v in zip(names, vals))
 
 
-def format_net_tip(usage: list[float]) -> str:
+def format_net_tip(usage: list[float], _col=None) -> str:
     down, up = _net_rate(usage[0]), _net_rate(usage[2])
     return "\n".join(
         (
@@ -126,6 +142,184 @@ def format_net_tip(usage: list[float]) -> str:
             f"collisions  {int(usage[4])} /s",
         )
     )
+
+
+def format_swap_tip(vals: list[float], _col=None) -> str:
+    return f"used  {int(round(vals[0] * 100))} %"
+
+
+def _disk_mib(v: float) -> str:
+    if v < 10:
+        return str(round(10 * v) / 10)
+    return str(int(round(v)))
+
+
+def format_disk_tip(vals: list[float], _col=None) -> str:
+    return f"read  {_disk_mib(vals[0])} MiB/s\nwrite  {_disk_mib(vals[1])} MiB/s"
+
+
+def format_freq_tip(vals: list[float], _col=None) -> str:
+    return f"{int(round(vals[0]))} MHz"
+
+
+def format_thermal_tip(vals: list[float], col=None) -> str:
+    t = vals[0]
+    if col is not None and getattr(col, "fahrenheit_unit", False):
+        t = round(t * 1.8 + 32)
+        return f"{int(t)} °F"
+    return f"{int(round(t))} °C"
+
+
+def format_fan_tip(vals: list[float], col=None) -> str:
+    rpm = getattr(col, "rpm", int(round(vals[0] * 10))) if col else int(round(vals[0] * 10))
+    return f"{rpm} rpm"
+
+
+def format_gpu_tip(vals: list[float], col=None) -> str:
+    if col is None:
+        return f"used  {int(round(vals[0]))} %"
+    return f"used  {int(col.percentage)} %\nmemory  {int(col.mem)} / {int(col.total)} MiB"
+
+
+def format_battery_tip(vals: list[float], col=None) -> str:
+    pct = int(round(vals[0]))
+    extra = getattr(col, "time_string", "") if col else ""
+    if extra and extra.strip() not in ("--", ""):
+        return f"{pct} %\n{extra}"
+    return f"{pct} %"
+
+
+TIP_FORMATTERS = {
+    "cpu": format_cpu_tip,
+    "memory": format_mem_tip,
+    "net": format_net_tip,
+    "swap": format_swap_tip,
+    "disk": format_disk_tip,
+    "freq": format_freq_tip,
+    "thermal": format_thermal_tip,
+    "fan": format_fan_tip,
+    "gpu": format_gpu_tip,
+    "battery": format_battery_tip,
+}
+
+COLLECTOR_CLASSES = {
+    "cpu": CpuCollector,
+    "memory": MemoryCollector,
+    "net": NetCollector,
+    "swap": SwapCollector,
+    "disk": DiskCollector,
+    "freq": FreqCollector,
+    "gpu": GpuCollector,
+    "battery": BatteryCollector,
+}
+
+
+def make_collector(name: str, cfg: dict):
+    if name == "thermal":
+        return ThermalCollector(
+            sensor_file=str(cfg.get("sensor_file", THERMAL_SENSOR_DEFAULT)),
+            fahrenheit_unit=bool(cfg.get("fahrenheit_unit", False)),
+        )
+    if name == "fan":
+        return FanCollector(sensor_file=str(cfg.get("sensor_file", FAN_SENSOR_DEFAULT)))
+    return COLLECTOR_CLASSES[name]()
+
+
+DEFAULT_ELEMENTS: dict = {
+    "cpu": {
+        "display": True,
+        "label": "cpu",
+        "show_label": True,
+        "style": "graph",
+        "refresh_ms": 1500,
+        "position": 0,
+        "colors": ["#0072b3", "#0092e6", "#00a3ff", "#002f3d", "#001d26"],
+    },
+    "freq": {
+        "display": False,
+        "label": "freq",
+        "show_label": False,
+        "style": "graph",
+        "refresh_ms": 1500,
+        "position": 1,
+        "colors": ["#001d26"],
+    },
+    "memory": {
+        "display": True,
+        "label": "mem",
+        "show_label": True,
+        "style": "graph",
+        "refresh_ms": 5000,
+        "position": 2,
+        "colors": ["#00b35b", "#00ff82", "#aaf5d0"],
+    },
+    "swap": {
+        "display": False,
+        "label": "swap",
+        "show_label": True,
+        "style": "graph",
+        "refresh_ms": 5000,
+        "position": 3,
+        "colors": ["#8b00c3"],
+    },
+    "net": {
+        "display": True,
+        "label": "net",
+        "show_label": True,
+        "style": "graph",
+        "refresh_ms": 1000,
+        "position": 4,
+        "colors": ["#fce94f", "#ff6e00", "#fb74fb", "#e0006e", "#ff0000"],
+    },
+    "disk": {
+        "display": False,
+        "label": "disk",
+        "show_label": True,
+        "style": "graph",
+        "refresh_ms": 2000,
+        "position": 5,
+        "colors": ["#c65000", "#ff6700"],
+    },
+    "gpu": {
+        "display": False,
+        "label": "gpu",
+        "show_label": True,
+        "style": "graph",
+        "refresh_ms": 5000,
+        "position": 6,
+        "colors": ["#00b35b", "#00ff82"],
+    },
+    "thermal": {
+        "display": False,
+        "label": "thermal",
+        "show_label": True,
+        "style": "graph",
+        "refresh_ms": 5000,
+        "position": 7,
+        "colors": ["#f2002e"],
+        "sensor_file": THERMAL_SENSOR_DEFAULT,
+        "fahrenheit_unit": False,
+    },
+    "fan": {
+        "display": False,
+        "label": "fan",
+        "show_label": True,
+        "style": "graph",
+        "refresh_ms": 5000,
+        "position": 8,
+        "colors": ["#f2002e"],
+        "sensor_file": FAN_SENSOR_DEFAULT,
+    },
+    "battery": {
+        "display": False,
+        "label": "batt",
+        "show_label": True,
+        "style": "graph",
+        "refresh_ms": 5000,
+        "position": 9,
+        "colors": ["#f2002e"],
+    },
+}
 
 
 class ChartArea(Gtk.DrawingArea):
@@ -188,16 +382,9 @@ class MonitorElement(Gtk.EventBox):
             lbl.get_style_context().add_class("sm-status-label")
             row.pack_start(lbl, False, False, 0)
 
-        fixed_max = None
-        if name == "cpu":
-            self._collector: CpuCollector | MemoryCollector | NetCollector = CpuCollector()
-            fixed_max = self._collector.chart_max  # type: ignore[attr-defined]
-        elif name == "memory":
-            self._collector = MemoryCollector()
-        elif name == "net":
-            self._collector = NetCollector()
-        else:
-            self._collector = MemoryCollector()
+        self._collector = make_collector(name, cfg)
+        self._format_tip = TIP_FORMATTERS[name]
+        fixed_max = getattr(self._collector, "chart_max", None)
 
         self._chart = StackedChart(
             width,
@@ -382,18 +569,11 @@ class MonitorElement(Gtk.EventBox):
         return False
 
     def _tick(self) -> bool:
-        if self.name == "cpu":
-            result = self._collector.sample()  # type: ignore[union-attr]
-            if result is None:
-                return True
-            vals, _pct = result
-            self._set_tip(format_cpu_tip(vals))
-        elif self.name == "memory":
-            vals = self._collector.sample()  # type: ignore[union-attr]
-            self._set_tip(format_mem_tip(vals))
-        else:
-            vals = self._collector.sample()  # type: ignore[union-attr]
-            self._set_tip(format_net_tip(vals))
+        result = self._collector.sample()
+        if result is None:
+            return True
+        vals = result[0] if isinstance(result, tuple) else result
+        self._set_tip(self._format_tip(vals, self._collector))
         self._chart.push(vals)
         self._chart_area.refresh()
         return True
@@ -444,9 +624,22 @@ def resolve_config_path(explicit: Path | None) -> Path:
     sys.exit(1)
 
 
+def merge_elements(cfg: dict) -> dict:
+    user = cfg.get("elements") or {}
+    merged: dict = {}
+    for name, defaults in DEFAULT_ELEMENTS.items():
+        merged[name] = {**defaults, **(user.get(name) or {})}
+    for name, el in user.items():
+        if name not in merged:
+            merged[name] = el
+    out = dict(cfg)
+    out["elements"] = merged
+    return out
+
+
 def load_config(path: Path) -> dict:
     with path.open(encoding="utf-8") as f:
-        return json.load(f)
+        return merge_elements(json.load(f))
 
 
 def layer_shell_install_help() -> str:
@@ -568,15 +761,23 @@ def build_window(cfg: dict) -> Gtk.Window:
     bar_height = int(cfg.get("bar_height", 30))
     chart_height = bar_height
     spacing = int(cfg.get("element_spacing", 4))
+    default_width = int(cfg.get("graph_width", 100))
     bg = parse_color(cfg.get("background", "#ffffff16"))
     elements_cfg = cfg.get("elements", {})
+    known = set(COLLECTOR_CLASSES) | {"thermal", "fan"}
     enabled = [
-        (name, elements_cfg[name])
+        (
+            name,
+            {
+                **elements_cfg[name],
+                "graph_width": int(elements_cfg[name].get("graph_width", default_width)),
+            },
+        )
         for name in sorted(
             elements_cfg,
             key=lambda n: int(elements_cfg[n].get("position", 99)),
         )
-        if elements_cfg[name].get("display", True)
+        if elements_cfg[name].get("display", True) and name in known
     ]
     content_width = estimate_content_width(enabled, spacing)
 
@@ -697,6 +898,44 @@ def main() -> None:
         assert "program  35 %" in mem_tip
         net_tip = format_net_tip([512.0, 0.0, 2048.0, 0.0, 0.0])
         assert "KiB/s" in net_tip and "MiB/s" in net_tip
+        assert "used  40 %" in format_swap_tip([0.4])
+        assert "MiB/s" in format_disk_tip([1.2, 8.0])
+        assert format_freq_tip([2400.0]) == "2400 MHz"
+        assert format_thermal_tip([45.0]) == "45 °C"
+        hot = ThermalCollector(fahrenheit_unit=True)
+        assert format_thermal_tip([45.0], hot) == "113 °F"
+        fan = FanCollector()
+        fan.rpm = 2100
+        assert format_fan_tip([210.0], fan) == "2100 rpm"
+        gpu = GpuCollector()
+        gpu.percentage, gpu.mem, gpu.total = 20, 1024, 4096
+        gpu_tip = format_gpu_tip([], gpu)
+        assert "used  20 %" in gpu_tip and "1024 / 4096" in gpu_tip
+        batt = BatteryCollector()
+        batt.time_string = "1:05"
+        batt_tip = format_battery_tip([87.0], batt)
+        assert "87 %" in batt_tip and "1:05" in batt_tip
+        assert millidegree_c(45000) == 45
+        assert abs(disk_rate(8192, 1.0) - 1.0) < 1e-9
+        assert gpu_chart_vals(20, 1024, 4096) == [20.0, 5.0]
+        assert gpu_chart_vals(0, 0, 0) == [0.0, 0.0]
+        swap_s = SwapCollector().sample()
+        assert len(swap_s) == 1 and 0 <= swap_s[0] <= 1
+        disk_s = DiskCollector().sample()
+        assert len(disk_s) == 2
+        freq_s = FreqCollector().sample()
+        assert len(freq_s) == 1 and freq_s[0] >= 0
+        therm_s = ThermalCollector().sample()
+        assert len(therm_s) == 1
+        fan_s = FanCollector().sample()
+        assert len(fan_s) == 1 and fan_s[0] >= 0
+        gpu_s = GpuCollector().sample()
+        assert len(gpu_s) == 2
+        batt_s = BatteryCollector().sample()
+        assert len(batt_s) == 1 and 0 <= batt_s[0] <= 100
+        old = merge_elements({"elements": {"cpu": {"display": True}}})
+        assert old["elements"]["disk"]["display"] is False
+        assert old["elements"]["cpu"]["display"] is True
         print("self-check ok")
         return
 
