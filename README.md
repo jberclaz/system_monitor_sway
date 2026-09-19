@@ -6,6 +6,9 @@ Stacked CPU, memory, network, and optional disk / swap / freq / GPU / thermal / 
 
 ## Install
 
+Packaged installs (Arch AUR, Fedora COPR, pipx/PyPI) are described in
+[packaging/README.md](packaging/README.md). Manual install:
+
 ### 1. Packages
 
 Ubuntu / Debian:

@@ -1,0 +1,41 @@
+# nFPM config: builds .deb and .rpm release artifacts from the
+# install.sh staging tree (single source of truth for file layout).
+#
+# Usage (VERSION without leading "v"):
+#   rm -rf stage
+#   DESTDIR=stage ./install.sh /usr
+#   VERSION=0.1.0 nfpm package --config packaging/nfpm/nfpm.yaml --packager deb --target .
+#   VERSION=0.1.0 nfpm package --config packaging/nfpm/nfpm.yaml --packager rpm --target .
+name: system-monitor-sway
+arch: all
+version: ${VERSION}
+release: 1
+maintainer: Jerome Berclaz
+description: Stacked CPU/memory/network graphs for Sway, matching gnome-shell-system-monitor-applet
+license: GPL-3.0-or-later
+homepage: https://github.com/jberclaz/system_monitor_sway
+
+contents:
+  - src: ./stage
+    dst: /
+    type: tree
+
+overrides:
+  deb:
+    depends:
+      - python3
+      - python3-gi
+      - gir1.2-gtop-2.0
+      - gir1.2-gtklayershell-0.1
+      - libgtk-layer-shell0
+    recommends:
+      - waybar
+      - sway
+  rpm:
+    depends:
+      - python3-gobject
+      - libgtop2
+      - gtk-layer-shell
+    recommends:
+      - waybar
+      - sway

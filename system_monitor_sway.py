@@ -30,6 +30,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "system-monitor-sway"
+__version__ = "0.1.0"
 
 # gtk-layer-shell is Wayland-only. If GTK picks X11/XWayland, Sway treats the
 # window as a normal client and places it in the workspace below Waybar.
@@ -873,7 +874,10 @@ def build_window(cfg: dict) -> Gtk.Window:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="GNOME-style system monitor for Sway")
+    parser = argparse.ArgumentParser(
+        prog="system-monitor-sway",
+        description="GNOME-style system monitor for Sway",
+    )
     parser.add_argument(
         "-c",
         "--config",
@@ -885,6 +889,12 @@ def main() -> None:
         "--self-check",
         action="store_true",
         help="Run lightweight sanity checks and exit",
+    )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     args = parser.parse_args()
     if args.self_check:
