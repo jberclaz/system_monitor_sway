@@ -40,6 +40,8 @@ jobs:
           sudo apt-get update -q &&
           sudo apt-get install -y -q python3-gi gir1.2-gtop-2.0
           gir1.2-gtklayershell-0.1 libgtk-layer-shell0 groff
+      - name: Versions in sync
+        run: python3 packaging/version.py check
       - name: Self-check
         run: python3 system_monitor_sway.py --self-check
       - name: Staging layout
@@ -76,9 +78,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Read version
-        run: |
-          VERSION="$(python3 -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('system_monitor_sway.py').read()).group(1))")"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+        run: echo "VERSION=$(python3 packaging/version.py)" >> "$GITHUB_ENV"
       - name: Install nfpm
         run: |
           curl -sSL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" -o /tmp/nfpm.tar.gz
@@ -131,7 +131,7 @@ jobs:
           merge-multiple: true
       - name: Tag must match __version__
         run: |
-          VERSION="$(python3 -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('system_monitor_sway.py').read()).group(1))")"
+          VERSION="$(python3 packaging/version.py)"
           test "${GITHUB_REF_NAME}" = "v${VERSION}" || { echo "tag ${GITHUB_REF_NAME} != v${VERSION}"; exit 1; }
           ls -la release-artifacts/
       - uses: softprops/action-gh-release@v2

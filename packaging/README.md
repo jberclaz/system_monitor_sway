@@ -76,15 +76,19 @@ prove the demand.
 ## GitHub Release artifacts
 
 `.github/workflows/release.yml` builds on every PR touching packaging
-code (without publishing) and publishes on version tags:
+code (without publishing) and publishes on version tags.
+
+`__version__` in `system_monitor_sway.py` is canonical; the PKGBUILD,
+`.SRCINFO` and `.spec` must restate it (their formats require static
+strings), so never hand-edit versions — propagate instead:
 
 ```bash
-# __version__ in system_monitor_sway.py is the single source of truth;
-# the workflow fails the release if the tag does not match it.
-git tag v0.1.0 && git push origin v0.1.0
+python3 packaging/version.py bump 0.2.0  # rewrites all files + spec changelog
+python3 packaging/version.py check       # also enforced in CI
+git commit -am "Release 0.2.0" && git tag v0.2.0 && git push origin v0.2.0
 ```
 
-Each release gets:
+The workflow fails the release if the tag does not match `__version__`.
 
 - `system_monitor_sway-*.tar.gz` + `*.whl` (PyPI-installable)
 - `system-monitor-sway_*_all.deb` (Debian/Ubuntu deps, built by nFPM
