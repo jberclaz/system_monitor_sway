@@ -1,0 +1,140 @@
+# Builds release artifacts on version tags (vX.Y.Z):
+#   - Python sdist + wheel (dist/*)
+#   - .deb (Debian/Ubuntu deps) and .rpm (Fedora deps) via nFPM
+# and publishes them on the GitHub Release.
+#
+# Every PR touching packaging code also runs the smoke test and builds
+# all artifacts (without publishing), plus install-tests the .deb/.rpm
+# in Ubuntu and Fedora containers.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "system_monitor_sway.py"
+      - "chart.py"
+      - "collectors.py"
+      - "config.json"
+      - "install.sh"
+      - "pyproject.toml"
+      - "system-monitor-sway.1"
+      - "packaging/**"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NFPM_VERSION: 2.47.0
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: >
+          sudo apt-get update -q &&
+          sudo apt-get install -y -q python3-gi gir1.2-gtop-2.0
+          gir1.2-gtklayershell-0.1 libgtk-layer-shell0 groff
+      - name: Self-check
+        run: python3 system_monitor_sway.py --self-check
+      - name: Staging layout
+        run: |
+          rm -rf stage
+          DESTDIR=stage ./install.sh /usr
+          test -x stage/usr/bin/system-monitor-sway
+          grep -q 'exec python3 "/usr/lib/system-monitor-sway/system_monitor_sway.py"' stage/usr/bin/system-monitor-sway
+          test -f stage/usr/lib/system-monitor-sway/system_monitor_sway.py
+          test -f stage/usr/share/system-monitor-sway/config.json
+          test -f stage/usr/share/man/man1/system-monitor-sway.1
+          python3 system_monitor_sway.py --version
+      - name: Man page renders
+        run: man --warnings -E UTF-8 -l -Tutf8 system-monitor-sway.1 > /dev/null
+
+  build-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Build sdist + wheel
+        run: |
+          python3 -m pip install --quiet build
+          python3 -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: dist/*
+
+  build-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read version
+        run: |
+          VERSION="$(python3 -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('system_monitor_sway.py').read()).group(1))")"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Install nfpm
+        run: |
+          curl -sSL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" -o /tmp/nfpm.tar.gz
+          tar xzf /tmp/nfpm.tar.gz -C /tmp
+      - name: Build .deb and .rpm
+        run: |
+          rm -rf stage dist-packages && mkdir -p dist-packages
+          DESTDIR=stage ./install.sh /usr
+          VERSION="$VERSION" /tmp/nfpm package --config packaging/nfpm/nfpm.yaml --packager deb --target dist-packages/
+          VERSION="$VERSION" /tmp/nfpm package --config packaging/nfpm/nfpm.yaml --packager rpm --target dist-packages/
+          ls -la dist-packages/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: dist-packages/*
+
+  install-test:
+    needs: build-packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: artifacts
+      - name: Install .deb on Ubuntu and run self-check
+        run: >
+          docker run --rm -v "$PWD/artifacts:/p:ro" ubuntu:24.04
+          sh -c "apt-get update -q &&
+          apt-get install -y -q /p/*.deb &&
+          system-monitor-sway --version &&
+          system-monitor-sway --self-check"
+      - name: Install .rpm on Fedora and run self-check
+        run: >
+          docker run --rm -v "$PWD/artifacts:/p:ro" fedora:43
+          sh -c "dnf install -y -q /p/*.rpm &&
+          system-monitor-sway --version &&
+          system-monitor-sway --self-check"
+
+  release:
+    needs: [smoke-test, build-python, build-packages, install-test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+      - name: Tag must match __version__
+        run: |
+          VERSION="$(python3 -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('system_monitor_sway.py').read()).group(1))")"
+          test "${GITHUB_REF_NAME}" = "v${VERSION}" || { echo "tag ${GITHUB_REF_NAME} != v${VERSION}"; exit 1; }
+          ls -la release-artifacts/
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*
+          generate_release_notes: true

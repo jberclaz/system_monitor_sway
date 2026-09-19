@@ -874,7 +874,10 @@ def build_window(cfg: dict) -> Gtk.Window:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="GNOME-style system monitor for Sway")
+    parser = argparse.ArgumentParser(
+        prog="system-monitor-sway",
+        description="GNOME-style system monitor for Sway",
+    )
     parser.add_argument(
         "-c",
         "--config",

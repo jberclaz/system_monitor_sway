@@ -26,4 +26,19 @@ Branch: `packaging-phase01`
 
 - Tag `v0.1.0`, fill real `sha256sums`, `makepkg --printsrcinfo > .SRCINFO`
 - Publish AUR repo + COPR project (see `packaging/README.md`)
-- Phase 2 (deferred): OBS/nfpm `.deb`/`.rpm` artifacts for Debian/Ubuntu
+- Phase 2 (deferred): OBS `.deb`/`.rpm` for official archives (release
+  artifacts already cover direct downloads)
+
+## Release artifacts (done, on packaging-phase01)
+
+- `packaging/nfpm/nfpm.yaml`: single nFPM config, builds `.deb`
+  (Debian/Ubuntu deps) + `.rpm` (Fedora deps) from the `install.sh`
+  staging tree (`type: tree`, `arch: all` → rpm `noarch`).
+- `.github/workflows/release.yml`: smoke-test → build-python →
+  build-packages → install-test (docker Ubuntu 24.04 + Fedora 43) →
+  release on `v*` tags (fails if tag ≠ `__version__`).
+- Verified locally with real tools: nFPM 2.47.0 builds both packages;
+  `dpkg-deb -c/-f` and `rpm -qlpv/--requires` correct; both install
+  with resolved deps in containers and pass `--self-check`.
+- Also: argparse `prog="system-monitor-sway"` so `--version` prints
+  the distro name; `stage/`, `dist-packages/` gitignored.
