@@ -1,14 +1,17 @@
 pkgbase = system-monitor-sway
-	pkgdesc = Stacked CPU/memory/network graphs for Sway, matching gnome-shell-system-monitor-applet
+	pkgdesc = Stacked CPU/memory/network graphs as a native Waybar module
 	pkgver = 0.1.0
 	pkgrel = 1
 	url = https://github.com/jberclaz/system_monitor_sway
-	arch = any
+	arch = x86_64
+	arch = aarch64
 	license = GPL-3.0-or-later
-	depends = python
-	depends = python-gobject
-	depends = libgtop
-	depends = gtk-layer-shell
+	depends = gtk3
+	depends = waybar
+	makedepends = gcc
+	makedepends = make
+	makedepends = pkgconf
+	makedepends = gtk3
 	source = system-monitor-sway-0.1.0.tar.gz::https://github.com/jberclaz/system_monitor_sway/archive/refs/tags/v0.1.0.tar.gz
 	sha256sums = SKIP
 

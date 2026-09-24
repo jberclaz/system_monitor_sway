@@ -1,148 +1,121 @@
 # system-monitor-sway
 
-Stacked CPU, memory, network, and optional disk / swap / freq / GPU / thermal / fan / battery graphs for **Sway**, matching [gnome-shell-system-monitor-applet](https://github.com/paradoxxxzero/gnome-shell-system-monitor-applet). A small overlay sits in the **center of Waybar**. GNOME is not required.
+Stacked CPU, memory, network and disk graphs for **Sway**, drawn directly
+inside **Waybar** as a native module — matching
+[gnome-shell-system-monitor-applet](https://github.com/paradoxxxzero/gnome-shell-system-monitor-applet).
+No overlay window, no image file, no scripting runtime: Waybar owns the
+pixels, so placement, fullscreen behavior and stacking just work (a
+fullscreen video covers the bar, graphs included).
 
-![screenshot](example.png)
+![screenshot](doc/example.png)
 
 ## Install
 
-Packaged installs (Arch AUR, Fedora COPR, pipx/PyPI) are described in
-[packaging/README.md](packaging/README.md). Manual install:
-
 ### 1. Packages
 
-Ubuntu / Debian:
+Build tools plus gtk3 headers (Debian/Ubuntu):
 
 ```bash
-sudo apt install python3 python3-gi gir1.2-gtop-2.0 libgtk-layer-shell0 gir1.2-gtklayershell-0.1
+sudo apt install gcc make pkg-config libgtk-3-dev
 ```
 
-Install **both** `libgtk-layer-shell0` and `gir1.2-gtklayershell-0.1` (Python needs the GIR package).
+Arch: `sudo pacman -S gcc make pkgconf gtk3`
+Fedora: `sudo dnf install gcc make pkgconf-pkg-config gtk3-devel`
 
-Arch: `sudo pacman -S python python-gobject libgtop gtk-layer-shell`
-Fedora: `sudo dnf install python3-gobject libgtop gtk-layer-shell`
+Runtime needs only gtk3 (Waybar already links it). No Python, no libgtop.
 
-### 2. Program
+Packaged installs (Arch AUR, Fedora COPR) are described in
+[packaging/README.md](packaging/README.md). Manual install:
+
+### 2. Build and install
 
 ```bash
 sudo ./install.sh
-mkdir -p ~/.config/system-monitor-sway
-cp /usr/local/share/system-monitor-sway/config.json ~/.config/system-monitor-sway/
 ```
 
-No root: `./install.sh "$HOME/.local"` and copy from `~/.local/share/system-monitor-sway/config.json` (keep `~/.local/bin` on `PATH`).
+No root: `./install.sh "$HOME/.local"`.
 
-Match `bar_height` in that config to Waybar’s `"height"` (both default `30`). Leave Waybar `"modules-center"` empty.
+### 3. Waybar config
 
-### 3. Autostart
+Merge `waybar-config-example.jsonc` (installed to
+`/usr/local/share/system-monitor-sway/` or `/usr/share/…`) into
+`~/.config/waybar/config.json`:
 
-Put this in `~/.config/sway/config` in the **autostart / `exec` section** (same place as Waybar, mako, etc.). Not inside a `bar { }` block.
-
-Use a **full path** (Sway’s `PATH` is often shorter than your terminal’s):
-
-```bash
-exec waybar
-exec /usr/local/bin/system-monitor-sway
+```json
+"modules-center": ["cffi/sysmon"],
+"cffi/sysmon": {
+  "module_path": "/usr/lib/system-monitor-sway/waybar_sysmon.so",
+  "graph_width": 100,
+  "height": 30,
+  "spacing": 4,
+  "interval_ms": 1000,
+  "background": "#ffffff16",
+  "graphs": ["cpu", "memory", "net"]
+}
 ```
 
-If you installed with `./install.sh "$HOME/.local"`:
-
-```bash
-exec /home/YOU/.local/bin/system-monitor-sway
-```
-
-`exec` runs **once at login**, not on `swaymsg reload`. After adding the line, either log out/in or:
-
-```bash
-swaymsg exec /usr/local/bin/system-monitor-sway
-```
-
-Do **not** use `exec_always` for the monitor unless you `pkill` it first — reload would start a second copy. `exec_always waybar` for Waybar is fine.
+Set `module_path` to the installed location
+(`$HOME/.local/lib/…` for unprivileged installs). Reload Waybar
+(`swaymsg reload` or restart it) to pick up the change.
 
 ## Configure
 
-Edit `~/.config/system-monitor-sway/config.json`. Changes apply on the next start (`pkill` the process, then `swaymsg exec …`). `swaymsg reload` does not re-read the file.
-
-Lookup, first file that exists wins:
-
-1. `~/.config/system-monitor-sway/config.json` (`$XDG_CONFIG_HOME` if set)
-2. `/etc/system-monitor-sway/config.json`
-3. `/usr/local/share/system-monitor-sway/config.json` or `/usr/share/…`
-4. `config.json` next to the program
-
-Override with `system-monitor-sway -c /path/to/config.json`. Missing keys use the defaults below. Omitted graphs stay off; a partial block such as `"disk": { "display": true }` fills in the rest.
-
-### Top-level
+Keys after `module_path` are optional (defaults shown above):
 
 | Key | Default | Role |
 |-----|---------|------|
-| `bar_height` | `30` | Overlay height in px. Must match Waybar `height`. Charts use this height |
-| `graph_width` | `100` | Default chart width in px when an element omits `graph_width` |
-| `element_spacing` | `4` | Gap between graphs in px |
+| `graph_width` | `100` | Chart width in px |
+| `height` | `30` | Strip height in px. Match Waybar's `height` |
+| `spacing` | `4` | Gap between graphs in px |
+| `interval_ms` | `1000` | Repaint/sample tick in ms (minimum `250`) |
 | `background` | `#ffffff16` | Chart background (`#rrggbb` or `#rrggbbaa`) |
-| `layer_shell_layer` | `overlay` | `overlay`, `top`, `bottom`, or `background`. `overlay` draws on top of Waybar |
-| `show_tooltip` | `true` | Hover popover with stats |
-| `tooltip_delay_ms` | `1000` | Delay before the popover. `0` shows it immediately |
-| `layer_shell_margin_top` | `-bar_height` | Top inset. The default pulls the strip onto Waybar; set this only if the overlap is wrong |
-| `elements` | cpu, memory, net | Graph objects, keyed by name |
+| `graphs` | cpu, memory, net | Subset to display, in canonical order |
+| `show_label` | `true` | Small monospace label before each graph, rotated 90° CCW to save space |
+| `label_cpu` | `cpu` | Label text for the cpu graph |
+| `label_memory` | `mem` | Label text for the memory graph |
+| `label_net` | `net` | Label text for the net graph |
+| `label_disk` | `disk` | Label text for the disk graph |
+| `refresh_cpu_ms` | `1500` | CPU sample period (minimum `250`) |
+| `refresh_memory_ms` | `5000` | Memory sample period |
+| `refresh_net_ms` | `1000` | Network sample period |
+| `refresh_disk_ms` | `2000` | Disk sample period |
+| `colors_cpu` | GNOME default (5 layers) | One `#rrggbb` per layer, exactly 5 entries |
+| `colors_memory` | GNOME default (3 layers) | Exactly 3 entries |
+| `colors_net` | GNOME default (5 layers) | Exactly 5 entries |
+| `colors_disk` | GNOME default (2 layers) | Exactly 2 entries |
 
-### Per graph (`elements.<name>`)
+Wrong-sized color arrays keep the defaults. Labels render vertically
+(bottom-to-top) in a 14 px slot; text longer than the bar height is
+truncated. CPU colors (bottom to top):
+user, system, nice, iowait, other (`#0072b3` `#0092e6` `#00a3ff`
+`#002f3d` `#001d26`). Memory: program, buffer, cache (`#00b35b`
+`#00ff82` `#aaf5d0`). Net: down, downerrors, up, uperrors, collisions
+(`#fce94f` `#ff6e00` `#fb74fb` `#e0006e` `#ff0000`). Disk: read, write
+(`#c65000` `#ff6700`).
 
-Names: `cpu`, `freq`, `memory`, `swap`, `net`, `disk`, `gpu`, `thermal`, `fan`, `battery`.
+CPU, network and disk sample `/proc` differentially (first tick primes, graphs
+fill right-to-left); memory is stateless. On startup the module samples
+at 100 ms for ~6 s so the charts arrive populated, then settles into the
+configured periods.
 
-| Key | Default | Role |
-|-----|---------|------|
-| `display` | `true` for cpu / memory / net, `false` otherwise | Draw this graph |
-| `position` | cpu `0` … battery `9` (see table below) | Left-to-right order |
-| `label` | the name (`mem` / `batt` for memory / battery) | Text before the chart |
-| `show_label` | `true` (`false` for freq) | Show `label` |
-| `style` | `graph` | `graph` or `both` draw the chart. Any other value (including GNOME’s `digit`) is label-only |
-| `refresh_ms` | see table (minimum `500`) | Sample period |
-| `graph_width` | top-level `graph_width` (`100`) | Chart width in px |
-| `colors` | GNOME defaults | One `#rrggbb` per stacked layer, listed bottom to top |
-
-Thermal only:
-
-| Key | Default | Role |
-|-----|---------|------|
-| `sensor_file` | `/sys/devices/virtual/thermal/thermal_zone0/temp` | Sysfs millidegree temperature |
-| `fahrenheit_unit` | `false` | Tooltip in °F. The graph is still °C |
-
-Fan only:
-
-| Key | Default | Role |
-|-----|---------|------|
-| `sensor_file` | `/sys/devices/virtual/thermal/cooling_device0/cur_state` | Sysfs integer (GNOME treats it as rpm) |
-
-### Graphs
-
-The shipped file lists only cpu, memory, and net. JSON cannot comment, so the others are omitted and stay off. To enable one, add it under `elements`:
-
-```json
-"disk": { "display": true }
-```
-
-| Name | `display` | `position` | `refresh_ms` | `colors` (layers) | Source |
-|------|-----------|------------|--------------|-------------------|--------|
-| `cpu` | `true` | `0` | `1500` | user, system, nice, iowait, other (`#0072b3` `#0092e6` `#00a3ff` `#002f3d` `#001d26`) | libgtop |
-| `freq` | `false` | `1` | `1500` | freq (`#001d26`) | average `scaling_cur_freq` (MHz) |
-| `memory` | `true` | `2` | `5000` | program, buffer, cache (`#00b35b` `#00ff82` `#aaf5d0`) | libgtop |
-| `swap` | `false` | `3` | `5000` | used (`#8b00c3`) | libgtop |
-| `net` | `true` | `4` | `1000` | down, downerrors, up, uperrors, collisions (`#fce94f` `#ff6e00` `#fb74fb` `#e0006e` `#ff0000`) | libgtop + `/proc/net/dev` |
-| `disk` | `false` | `5` | `2000` | read, write (`#c65000` `#ff6700`) | `/proc/diskstats` |
-| `gpu` | `false` | `6` | `5000` | used, memory (`#00b35b` `#00ff82`) | `nvidia-smi`, else amdgpu sysfs, else `glxinfo` |
-| `thermal` | `false` | `7` | `5000` | tz0 (`#f2002e`) | `sensor_file` |
-| `fan` | `false` | `8` | `5000` | fan0 (`#f2002e`) | `sensor_file` |
-| `battery` | `false` | `9` | `5000` | batt0 (`#f2002e`) | `/sys/class/power_supply/BAT*` |
+Debug with `WAYBAR_SYSMON_DEBUG=1 waybar` (sampling + paint diagnostics
+on stderr).
 
 ## Development
 
 ```bash
-python3 verify_graphs.py
-python3 system_monitor_sway.py --self-check
+make -C cffi        # build/waybar_sysmon.so, warning-free (-Wall -Wextra -Wpedantic)
+make -C cffi test   # chart/collector unit tests, incl. bit-exact check vs the GNOME math
 ```
 
-Not ported: applet popup menu.
+`make -C cffi visualtest` builds a standalone GTK window harness rendering
+the same charts (useful where screenshots cannot see layer-shell).
+
+Current limits: cpu / memory / net / disk only, graphs with labels but no
+tooltips, no HiDPI scaling yet. The module targets Waybar's CFFI ABI v2
+(header vendored in `cffi/waybar_cffi_module.h`); if Waybar ever requires
+a newer ABI, the module refuses to load with an error instead of
+misrendering.
 
 ## License
 

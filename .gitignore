@@ -6,3 +6,4 @@ dist-packages/
 stage/
 build/
 *.egg-info/
+tasks/

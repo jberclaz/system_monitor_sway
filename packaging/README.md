@@ -1,9 +1,20 @@
-# Packaging (Phase 1)
+# Packaging
 
-Single source of truth for the version: `__version__` in
-`system_monitor_sway.py` (mirrored in `pyproject.toml`,
-`packaging/aur/PKGBUILD`, `packaging/fedora/*.spec`, man page header).
-Bump all of them together when tagging `vX.Y.Z`.
+Single source of truth for the version: the **git tag** (`vX.Y.Z`).
+`packaging/version.py` resolves it via `git describe` (falling back to
+the `VERSION` file without git metadata, then `0.0.0-dev`). Distro files
+that need static versions (`PKGBUILD`, `.SRCINFO`, `.spec`) are stamped
+from the tag — never hand-edited:
+
+```bash
+python3 packaging/version.py check   # stamps agree with the tag?
+python3 packaging/version.py sync    # stamp the tag into distro files
+python3 packaging/version.py bump 0.2.0  # create tag v0.2.0 (push it yourself)
+git push origin v0.2.0               # CI stamps, builds, publishes
+```
+
+The man page header carries the release date, not the version, so it
+needs no stamping.
 
 ## Arch Linux (AUR)
 
@@ -29,11 +40,16 @@ yay -S system-monitor-sway
 ## Fedora (COPR)
 
 Spec lives in `packaging/fedora/system-monitor-sway.spec`
-(`BuildArch: noarch`, pure Python).
+(arch-dependent: it compiles the native Waybar CFFI module, so no
+`BuildArch: noarch`; build deps are `gcc`, `make`, `pkgconf-pkg-config`,
+`gtk3-devel`).
 
 ```bash
 # local smoke test (needs rpmbuild):
 rpmbuild -ba packaging/fedora/system-monitor-sway.spec
+# release build from the stamped GitHub release tarball:
+#   1. `git push origin vX.Y.Z` (CI attaches system-monitor-sway-vX.Y.Z.tar.gz)
+#   2. point COPR at that tarball; the .spec inside already carries the tag
 # COPR web UI or CLI:
 copr-cli create system-monitor-sway --chroot fedora-43-x86_64 --chroot fedora-44-x86_64
 copr-cli build system-monitor-sway --now packaging/fedora/system-monitor-sway.spec
@@ -44,24 +60,6 @@ Users enable with:
 ```bash
 sudo dnf copr enable <you>/system-monitor-sway
 sudo dnf install system-monitor-sway
-```
-
-## PyPI / pipx (all distros)
-
-System GIR libraries are still required first (see README §1),
-then:
-
-```bash
-pipx install system-monitor-sway
-# or
-pip install system-monitor-sway
-```
-
-Build artifacts locally:
-
-```bash
-python3 -m build
-twine check dist/*
 ```
 
 ## Debian/Ubuntu (.deb via nFPM)
@@ -78,7 +76,7 @@ prove the demand.
 `.github/workflows/release.yml` builds on every PR touching packaging
 code (without publishing) and publishes on version tags.
 
-`__version__` in `system_monitor_sway.py` is canonical; the PKGBUILD,
+`VERSION` at the repo root is canonical; the PKGBUILD,
 `.SRCINFO` and `.spec` must restate it (their formats require static
 strings), so never hand-edit versions — propagate instead:
 
@@ -88,12 +86,12 @@ python3 packaging/version.py check       # also enforced in CI
 git commit -am "Release 0.2.0" && git tag v0.2.0 && git push origin v0.2.0
 ```
 
-The workflow fails the release if the tag does not match `__version__`.
+The workflow fails the release if the tag does not match `VERSION`.
 
-- `system_monitor_sway-*.tar.gz` + `*.whl` (PyPI-installable)
-- `system-monitor-sway_*_all.deb` (Debian/Ubuntu deps, built by nFPM
+- `system-monitor-sway_*_amd64.deb` (Debian/Ubuntu deps, built by nFPM
   from the `install.sh` staging tree — see `packaging/nfpm/nfpm.yaml`)
-- `system-monitor-sway-*.noarch.rpm` (Fedora deps, same staging tree)
+- `system-monitor-sway-*.rpm` (Fedora deps, same staging tree; archful)
 
 Before publishing, the workflow install-tests the `.deb` on Ubuntu
-and the `.rpm` on Fedora containers (`--self-check` must pass).
+and the `.rpm` on Fedora containers (module `.so` present with the
+CFFI symbols).

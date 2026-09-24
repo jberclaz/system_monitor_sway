@@ -1,11 +1,10 @@
 # Builds release artifacts on version tags (vX.Y.Z):
-#   - Python sdist + wheel (dist/*)
 #   - .deb (Debian/Ubuntu deps) and .rpm (Fedora deps) via nFPM
 # and publishes them on the GitHub Release.
 #
-# Every PR touching packaging code also runs the smoke test and builds
-# all artifacts (without publishing), plus install-tests the .deb/.rpm
-# in Ubuntu and Fedora containers.
+# Every PR touching code also runs the C build + unit tests and the
+# packaging smoke test (without publishing), plus install-tests the
+# .deb/.rpm in Ubuntu and Fedora containers.
 name: release
 
 on:
@@ -13,13 +12,12 @@ on:
     tags: ["v*"]
   pull_request:
     paths:
-      - "system_monitor_sway.py"
-      - "chart.py"
-      - "collectors.py"
-      - "config.json"
+      - "cffi/**"
+      - "VERSION"
       - "install.sh"
-      - "pyproject.toml"
-      - "system-monitor-sway.1"
+      - "waybar-config-example.jsonc"
+      - "waybar-sysmon.1"
+      - "README.md"
       - "packaging/**"
       - ".github/workflows/release.yml"
   workflow_dispatch:
@@ -31,54 +29,47 @@ env:
   NFPM_VERSION: 2.47.0
 
 jobs:
-  smoke-test:
+  cffi-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # version.py resolves the version from git tags
       - name: Install system dependencies
         run: >
           sudo apt-get update -q &&
-          sudo apt-get install -y -q python3-gi gir1.2-gtop-2.0
-          gir1.2-gtklayershell-0.1 libgtk-layer-shell0 groff
-      - name: Versions in sync
+          sudo apt-get install -y -q gcc make pkg-config libgtk-3-dev groff
+      - name: Versions in sync with tag
         run: python3 packaging/version.py check
-      - name: Self-check
-        run: python3 system_monitor_sway.py --self-check
+      - name: Build warning-free
+        run: make -C cffi
+      - name: Unit tests
+        run: make -C cffi test
+      - name: CFFI ABI surface
+        run: nm -D --defined-only cffi/build/waybar_sysmon.so | grep -q wbcffi_deinit
       - name: Staging layout
         run: |
           rm -rf stage
           DESTDIR=stage ./install.sh /usr
-          test -x stage/usr/bin/system-monitor-sway
-          grep -q 'exec python3 "/usr/lib/system-monitor-sway/system_monitor_sway.py"' stage/usr/bin/system-monitor-sway
-          test -f stage/usr/lib/system-monitor-sway/system_monitor_sway.py
-          test -f stage/usr/share/system-monitor-sway/config.json
-          test -f stage/usr/share/man/man1/system-monitor-sway.1
-          python3 system_monitor_sway.py --version
+          test -f stage/usr/lib/system-monitor-sway/waybar_sysmon.so
+          test -f stage/usr/share/system-monitor-sway/waybar-config-example.jsonc
+          test -f stage/usr/share/man/man1/waybar-sysmon.1
       - name: Man page renders
-        run: man --warnings -E UTF-8 -l -Tutf8 system-monitor-sway.1 > /dev/null
-
-  build-python:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-      - name: Build sdist + wheel
-        run: |
-          python3 -m pip install --quiet build
-          python3 -m build
-      - uses: actions/upload-artifact@v4
-        with:
-          name: python-dist
-          path: dist/*
+        run: man --warnings -E UTF-8 -l -Tutf8 waybar-sysmon.1 > /dev/null
 
   build-packages:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Read version
-        run: echo "VERSION=$(python3 packaging/version.py)" >> "$GITHUB_ENV"
+        with:
+          fetch-depth: 0 # version.py resolves the version from git tags
+      - name: Install build dependencies
+        run: >
+          sudo apt-get update -q &&
+          sudo apt-get install -y -q gcc make pkg-config libgtk-3-dev
+      - name: Read version from tag
+        # nfpm needs a clean version: strip any +N.gSHA local suffix.
+        run: echo "VERSION=$(python3 packaging/version.py | cut -d+ -f1)" >> "$GITHUB_ENV"
       - name: Install nfpm
         run: |
           curl -sSL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" -o /tmp/nfpm.tar.gz
@@ -103,36 +94,39 @@ jobs:
         with:
           name: linux-packages
           path: artifacts
-      - name: Install .deb on Ubuntu and run self-check
+      - name: Install .deb on Ubuntu and check the module
         run: >
           docker run --rm -v "$PWD/artifacts:/p:ro" ubuntu:24.04
           sh -c "apt-get update -q &&
-          apt-get install -y -q /p/*.deb &&
-          system-monitor-sway --version &&
-          system-monitor-sway --self-check"
-      - name: Install .rpm on Fedora and run self-check
+          apt-get install -y -q /p/*.deb binutils &&
+          test -f /usr/lib/system-monitor-sway/waybar_sysmon.so &&
+          nm -D --defined-only /usr/lib/system-monitor-sway/waybar_sysmon.so | grep -q wbcffi_init"
+      - name: Install .rpm on Fedora and check the module
         run: >
           docker run --rm -v "$PWD/artifacts:/p:ro" fedora:43
-          sh -c "dnf install -y -q /p/*.rpm &&
-          system-monitor-sway --version &&
-          system-monitor-sway --self-check"
+          sh -c "dnf install -y -q /p/*.rpm binutils &&
+          test -f /usr/lib/system-monitor-sway/waybar_sysmon.so &&
+          nm -D --defined-only /usr/lib/system-monitor-sway/waybar_sysmon.so | grep -q wbcffi_init"
 
   release:
-    needs: [smoke-test, build-python, build-packages, install-test]
+    needs: [cffi-test, build-packages, install-test]
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # stamp the exact tag being released
       - uses: actions/download-artifact@v4
         with:
           path: release-artifacts
           merge-multiple: true
-      - name: Tag must match __version__
+      - name: Stamp tag version and stage source tarball
         run: |
-          VERSION="$(python3 packaging/version.py)"
-          test "${GITHUB_REF_NAME}" = "v${VERSION}" || { echo "tag ${GITHUB_REF_NAME} != v${VERSION}"; exit 1; }
+          python3 packaging/version.py sync
+          python3 packaging/version.py check
+          tar --exclude=.git -czf "release-artifacts/system-monitor-sway-${GITHUB_REF_NAME}.tar.gz" .
           ls -la release-artifacts/
       - uses: softprops/action-gh-release@v2
         with:
