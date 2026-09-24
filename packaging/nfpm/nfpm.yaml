@@ -7,11 +7,12 @@
 #   VERSION=0.1.0 nfpm package --config packaging/nfpm/nfpm.yaml --packager deb --target .
 #   VERSION=0.1.0 nfpm package --config packaging/nfpm/nfpm.yaml --packager rpm --target .
 name: system-monitor-sway
-arch: all
+# Arch-dependent (ships the compiled cffi/waybar_sysmon.so); CI builds on x86_64.
+arch: amd64
 version: ${VERSION}
 release: 1
 maintainer: Jerome Berclaz
-description: Stacked CPU/memory/network graphs for Sway, matching gnome-shell-system-monitor-applet
+description: Stacked CPU/memory/network graphs as a native Waybar module
 license: GPL-3.0-or-later
 homepage: https://github.com/jberclaz/system_monitor_sway
 
@@ -23,19 +24,13 @@ contents:
 overrides:
   deb:
     depends:
-      - python3
-      - python3-gi
-      - gir1.2-gtop-2.0
-      - gir1.2-gtklayershell-0.1
-      - libgtk-layer-shell0
+      - libgtk-3-0
     recommends:
       - waybar
       - sway
   rpm:
     depends:
-      - python3-gobject
-      - libgtop2
-      - gtk-layer-shell
-    recommends:
+      - gtk3
       - waybar
+    recommends:
       - sway

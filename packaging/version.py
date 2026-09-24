@@ -3,11 +3,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Single source of truth for the release version.
 
-The canonical version is ``__version__`` in ``system_monitor_sway.py``
-(it must work for bare file-copy installs, where no git metadata and no
-pip metadata exist). Distro formats (PKGBUILD / .SRCINFO / .spec) require
-static version strings, so they restate it -- this script propagates and
-verifies instead of hand-editing every file:
+The canonical version lives in the VERSION file at the repo root.
+Distro formats (PKGBUILD / .SRCINFO / .spec) require static version
+strings, so they restate it -- this script propagates and verifies
+instead of hand-editing every file:
 
     python3 packaging/version.py            # print canonical version
     python3 packaging/version.py check      # exit 1 if any file disagrees
@@ -22,8 +21,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MAIN = ROOT / "system_monitor_sway.py"
-PYPROJECT = ROOT / "pyproject.toml"
+VERSION_FILE = ROOT / "VERSION"
 PKGBUILD = ROOT / "packaging" / "aur" / "PKGBUILD"
 SRCINFO = ROOT / "packaging" / "aur" / ".SRCINFO"
 SPEC = ROOT / "packaging" / "fedora" / "system-monitor-sway.spec"
@@ -36,16 +34,13 @@ def read(path: Path) -> str:
 
 
 def canonical() -> str:
-    m = re.search(r'^__version__ = "([^"]+)"', read(MAIN), re.M)
-    assert m, f"no __version__ in {MAIN}"
-    return m.group(1)
+    return read(VERSION_FILE).strip()
 
 
 def collected() -> dict[str, list[str]]:
     """Every static restatement of the version, by file."""
     srcinfo = read(SRCINFO)
     return {
-        str(PYPROJECT.relative_to(ROOT)): re.findall(r'^version = "([^"]+)"', read(PYPROJECT), re.M),
         str(PKGBUILD.relative_to(ROOT)): re.findall(r"^pkgver=(\S+)", read(PKGBUILD), re.M),
         str(SRCINFO.relative_to(ROOT)): (
             re.findall(r"^\tpkgver = (\S+)", srcinfo, re.M)
@@ -58,6 +53,9 @@ def collected() -> dict[str, list[str]]:
 
 def cmd_check() -> int:
     want = canonical()
+    if not VERSION_RE.match(want):
+        print(f"VERSION file holds garbage: {want!r}")
+        return 1
     bad = False
     for path, found in collected().items():
         if not found:
@@ -68,7 +66,7 @@ def cmd_check() -> int:
             if v != want:
                 bad = True
             print(f"{path}: {v} [{status}]")
-    print(f"canonical (__version__): {want}")
+    print(f"canonical (VERSION): {want}")
     return 1 if bad else 0
 
 
@@ -83,8 +81,7 @@ def cmd_bump(version: str) -> int:
     if not VERSION_RE.match(version):
         print(f"refusing odd version: {version!r}")
         return 1
-    _sub(MAIN, r'^__version__ = "[^"]+"', f'__version__ = "{version}"')
-    _sub(PYPROJECT, r'^version = "[^"]+"', f'version = "{version}"')
+    (ROOT / "VERSION").write_text(version + "\n", encoding="utf-8")
     _sub(PKGBUILD, r"^pkgver=\S+", f"pkgver={version}")
     _sub(SRCINFO, r"(?<=pkgver = )[^\s]+", version)
     _sub(SRCINFO, r"(?<=system-monitor-sway-)[\d.]+(?=\.tar\.gz)", version)

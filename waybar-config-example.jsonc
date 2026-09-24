@@ -1,0 +1,19 @@
+{
+  // system-monitor-sway native module (cffi/waybar_sysmon.so).
+  // Merge the "cffi/sysmon" block into your Waybar config and add
+  // "cffi/sysmon" to "modules-center".
+  "modules-center": ["cffi/sysmon"],
+  "cffi/sysmon": {
+    // Adjust to your install PREFIX ($HOME/.local or /usr/local or /usr):
+    "module_path": "/usr/lib/system-monitor-sway/waybar_sysmon.so",
+    "graph_width": 100,
+    "height": 30,
+    "spacing": 4,
+    "interval_ms": 1000,
+    "background": "#ffffff16",
+    "graphs": ["cpu", "memory", "net"]
+    // Optional: "refresh_cpu_ms" (1500), "refresh_memory_ms" (5000),
+    // "refresh_net_ms" (1000); "colors_cpu" / "colors_memory" /
+    // "colors_net" (arrays with exactly 5 / 3 / 5 entries).
+  }
+}

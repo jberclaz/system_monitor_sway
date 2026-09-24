@@ -1,0 +1,73 @@
+.TH WAYBAR-SYSMON 1 "2026-09-23" "system-monitor-sway" "User Commands"
+.SH NAME
+waybar-sysmon \- stacked CPU/memory/network graphs as a native Waybar module
+.SH SYNOPSIS
+Load
+.I /usr/lib/system-monitor-sway/waybar_sysmon.so
+as a
+.I cffi/sysmon
+module in the Waybar config.
+.SH DESCRIPTION
+system-monitor-sway draws GNOME system-monitor style stacked area charts
+directly inside
+.BR Waybar
+via its CFFI plugin API: no overlay window, no image file, no scripting
+runtime. Placement, fullscreen behavior and stacking belong to Waybar and
+Sway, so graphs are covered by fullscreen windows automatically.
+.PP
+First cut: cpu, memory and net graphs only, without labels or tooltips.
+.SS Waybar configuration
+Merge
+.I /usr/share/system-monitor-sway/waybar-config-example.jsonc
+into
+.IR ~/.config/waybar/config.json :
+.EX
+"modules-center": ["cffi/sysmon"],
+"cffi/sysmon": {
+  "module_path": "/usr/lib/system-monitor-sway/waybar_sysmon.so",
+  "graph_width": 100,
+  "height": 30,
+  "spacing": 4,
+  "interval_ms": 1000,
+  "background": "#ffffff16",
+  "graphs": ["cpu", "memory", "net"]
+}
+.EE
+All keys after
+.I module_path
+are optional; defaults are shown. graphs selects a subset in canonical
+order. Refresh periods default to cpu 1500 ms, memory 5000 ms, net
+1000 ms (minimum 250 ms) via
+.IR refresh_cpu_ms ,
+.IR refresh_memory_ms ,
+.IR refresh_net_ms .
+Chart colors default to the GNOME applet palette and can be overridden
+with
+.IR colors_cpu ,
+.IR colors_memory ,
+.IR colors_net
+(arrays of exactly 5 / 3 / 5
+.IR #rrggbb
+entries; a wrong-sized array keeps the defaults).
+.SH ENVIRONMENT
+.TP
+.B WAYBAR_SYSMON_DEBUG
+If set, log sampling, paint and lifecycle diagnostics to Waybar's stderr.
+.SH FILES
+.TP
+.I /usr/lib/system-monitor-sway/waybar_sysmon.so
+The module (path varies with install PREFIX).
+.TP
+.I /usr/share/system-monitor-sway/waybar-config-example.jsonc
+Annotated config example.
+.SH NOTES
+The module targets Waybar's CFFI ABI v2. If Waybar ever requires a newer
+ABI, the module refuses to load with an error instead of misrendering.
+.SH SEE ALSO
+.BR sway (1),
+.BR swaymsg (1),
+.BR waybar (1)
+.SH AUTHOR
+Jerome Berclaz.
+.br
+License: GPL-3.0-or-later.
