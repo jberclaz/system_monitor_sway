@@ -15,7 +15,7 @@ GTK_LIBS := $(shell pkg-config --libs gtk+-3.0)
 BUILD = build
 SO = $(BUILD)/waybar_sysmon.so
 
-SRCS = sysmon.c chart.c collectors.c
+SRCS = sysmon.c chart.c collectors.c strip.c
 OBJS = $(SRCS:%.c=$(BUILD)/%.o)
 
 .PHONY: all test clean
@@ -37,11 +37,11 @@ test: $(BUILD)/run_tests
 visualtest: $(BUILD)/visualtest
 	@echo "Run: ./build/visualtest & sleep 9; grim shot; pkill visualtest"
 
-$(BUILD)/run_tests: test_logic.c chart.c collectors.c | $(BUILD)
+$(BUILD)/run_tests: test_logic.c chart.c collectors.c strip.c | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(shell pkg-config --cflags cairo) $^ -o $@ \
 		$(shell pkg-config --libs cairo) -lm
 
-$(BUILD)/visualtest: test_window.c chart.c collectors.c | $(BUILD)
+$(BUILD)/visualtest: test_window.c chart.c collectors.c strip.c | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(GTK_CFLAGS) $^ -o $@ $(GTK_LIBS) -lm
 
 clean:

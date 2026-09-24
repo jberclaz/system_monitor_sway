@@ -8,6 +8,7 @@
 
 #include "chart.h"
 #include "collectors.h"
+#include "strip.h"
 
 static int dbl_eq(double a, double b) { return fabs(a - b) < 1e-9; }
 
@@ -112,6 +113,41 @@ static void test_against_python_reference(void) {
   sm_chart_free(&c);
 }
 
+static void test_label_draws_ink(void) {
+  cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 64, 30);
+  cairo_t *cr = cairo_create(s);
+  cairo_set_source_rgba(cr, 0, 0, 0, 0);
+  cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+  cairo_paint(cr);
+  cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+  sm_draw_label(cr, "cpu", 30, SM_LABEL_RGBA, SM_LABEL_FONT_SIZE);
+  // Overlong text is truncated to the strip height, staying in-slot.
+  sm_draw_label(cr, "averylonglabelname", 30, SM_LABEL_RGBA, SM_LABEL_FONT_SIZE);
+  // Degenerate inputs must neither crash nor paint.
+  sm_draw_label(cr, "", 30, SM_LABEL_RGBA, SM_LABEL_FONT_SIZE);
+  sm_draw_label(cr, NULL, 30, SM_LABEL_RGBA, SM_LABEL_FONT_SIZE);
+  sm_draw_label(NULL, "cpu", 30, SM_LABEL_RGBA, SM_LABEL_FONT_SIZE);
+  cairo_surface_flush(s);
+  unsigned char *d = cairo_image_surface_get_data(s);
+  int stride = cairo_image_surface_get_stride(s);
+  int ink = 0, outside = 0;
+  for (int y = 0; y < 30; y++) {
+    for (int x = 0; x < 64; x++) {
+      // ARGB32 on little-endian stores bytes as B,G,R,A.
+      if (d[y * stride + x * 4 + 3] > 0) {
+        ink++;
+        if (x >= SM_LABEL_PX) outside++;
+      }
+    }
+  }
+  assert(ink > 20);     // real glyph pixels landed
+  assert(outside == 0);  // ... and stayed inside the label slot
+  cairo_destroy(cr);
+  cairo_surface_destroy(s);
+  assert(sm_element_width(1, 100) == SM_LABEL_PX + 100);
+  assert(sm_element_width(0, 100) == 100);
+}
+
 static void test_collectors_live(void) {
   CpuState cpu;
   memset(&cpu, 0, sizeof(cpu));
@@ -150,6 +186,7 @@ int main(void) {
   test_chart_overflow();
   test_parse_color();
   test_against_python_reference();
+  test_label_draws_ink();
   test_collectors_live();
   printf("cffi logic tests: OK\n");
   return 0;

@@ -16,6 +16,7 @@
 
 #include "chart.h"
 #include "collectors.h"
+#include "strip.h"
 
 #ifndef SYSMON_VERSION
 #define SYSMON_VERSION "unknown"
@@ -56,6 +57,8 @@ typedef struct {
   int refresh_ms;
   gint64 last_sample_us;  // 0 = never
   int pushed;             // set when the latest sample produced data
+  int show_label;
+  char label[32];
 } Graph;
 
 typedef struct {
@@ -67,6 +70,7 @@ typedef struct {
   int spacing;
   int height;
   SmColor bg;
+  double font_size;
   guint timer_id;
   int interval_ms;
   int warmup_left;  // fast-tick burst filling history right after startup
@@ -137,6 +141,15 @@ static int cfg_int(const wbcffi_config_entry *entries, size_t n, const char *key
   long v = strtol(raw, &end, 10);
   if (end == raw) return fallback;
   return (int)v;
+}
+
+static int cfg_bool(const wbcffi_config_entry *entries, size_t n, const char *key,
+                    int fallback) {
+  const char *raw = cfg_raw(entries, n, key);
+  if (!raw) return fallback;
+  if (strcmp(raw, "true") == 0 || strcmp(raw, "1") == 0) return 1;
+  if (strcmp(raw, "false") == 0 || strcmp(raw, "0") == 0) return 0;
+  return fallback;
 }
 
 // Collects quoted strings from a JSON array value into out[].
@@ -268,6 +281,14 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cr, gpointer data) {
   double x = 0;
   for (int i = 0; i < sm->n_graphs; i++) {
     if (i > 0) x += sm->spacing;
+    if (sm->graphs[i].show_label) {
+      cairo_save(cr);
+      cairo_translate(cr, x, 0);
+      sm_draw_label(cr, sm->graphs[i].label, (double)sm->height, SM_LABEL_RGBA,
+                    sm->font_size);
+      cairo_restore(cr);
+      x += SM_LABEL_PX;
+    }
     cairo_save(cr);
     cairo_translate(cr, x, 0);
     sm_chart_draw(&sm->graphs[i].chart, cr, sm->bg);
@@ -316,6 +337,9 @@ WBCFFI_EXPORT void *wbcffi_init(const wbcffi_init_info *init_info,
   if (sm_parse_color(bg_raw, &sm->bg) != 0)
     sm_parse_color("#ffffff16", &sm->bg);
 
+  // Label defaults mirror the old overlay (memory shortens to "mem").
+  static const char *default_labels[N_SPECS] = {"cpu", "mem", "net"};
+  int show_label = cfg_bool(config_entries, config_entries_len, "show_label", 1);
   // Enabled graphs, in canonical order.
   char wanted[][32] = {{0}, {0}, {0}};
   int n_wanted =
@@ -334,6 +358,17 @@ WBCFFI_EXPORT void *wbcffi_init(const wbcffi_init_info *init_info,
     Graph *g = &sm->graphs[sm->n_graphs++];
     g->spec = &GRAPH_SPECS[i];
     g->width = graph_width;
+    g->show_label = show_label;
+    char lkey[48];
+    snprintf(lkey, sizeof(lkey), "label_%s", GRAPH_SPECS[i].name);
+    const char *lraw = cfg_raw(config_entries, config_entries_len, lkey);
+    char lunq[32] = {0};
+    if (lraw && json_unquote(lraw, lunq, sizeof(lunq)) == 0 && lunq[0]) {
+      strncpy(g->label, lunq, sizeof(g->label));
+    } else {
+      strncpy(g->label, default_labels[i], sizeof(g->label));
+    }
+    g->label[sizeof(g->label) - 1] = 0;
     char rkey[48];
     snprintf(rkey, sizeof(rkey), "refresh_%s_ms", GRAPH_SPECS[i].name);
     g->refresh_ms = cfg_int(config_entries, config_entries_len, rkey,
@@ -371,10 +406,12 @@ WBCFFI_EXPORT void *wbcffi_init(const wbcffi_init_info *init_info,
   }
   GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   sm->area = gtk_drawing_area_new();
+  sm->font_size =
+      sm->height < 14 ? (double)sm->height * 0.7 : SM_LABEL_FONT_SIZE;
   int total_w = 0;
   for (int i = 0; i < sm->n_graphs; i++) {
     if (i > 0) total_w += sm->spacing;
-    total_w += sm->graphs[i].width;
+    total_w += sm_element_width(sm->graphs[i].show_label, sm->graphs[i].width);
   }
   gtk_widget_set_size_request(sm->area, total_w, sm->height);
   g_signal_connect(sm->area, "draw", G_CALLBACK(on_draw), sm);

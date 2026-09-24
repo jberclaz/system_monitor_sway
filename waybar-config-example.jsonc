@@ -11,8 +11,10 @@
     "spacing": 4,
     "interval_ms": 1000,
     "background": "#ffffff16",
-    "graphs": ["cpu", "memory", "net"]
-    // Optional: "refresh_cpu_ms" (1500), "refresh_memory_ms" (5000),
+    "graphs": ["cpu", "memory", "net"],
+    "show_label": true
+    // Optional: "label_cpu" ("cpu"), "label_memory" ("mem"),
+    // "label_net" ("net"); "refresh_cpu_ms" (1500), "refresh_memory_ms" (5000),
     // "refresh_net_ms" (1000); "colors_cpu" / "colors_memory" /
     // "colors_net" (arrays with exactly 5 / 3 / 5 entries).
   }

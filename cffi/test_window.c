@@ -5,6 +5,7 @@
 
 #include "chart.h"
 #include "collectors.h"
+#include "strip.h"
 
 static const char *CPU_COLORS[] = {"#0072b3", "#0092e6", "#00a3ff", "#002f3d",
                                    "#001d26"};
@@ -21,38 +22,39 @@ typedef struct {
   int ticks;
 } App;
 
-static gboolean on_draw(GtkWidget *w, cairo_t *cr, gpointer data) {
-  (void)w;
-  App *app = data;
+static const char *LABELS[3] = {"cpu", "mem", "net"};
+
+static void composite(App *app, cairo_t *cr) {
   int widths[3] = {100, 100, 100};
   double x = 0;
   for (int i = 0; i < 3; i++) {
     if (i) x += 4;
     cairo_save(cr);
     cairo_translate(cr, x, 0);
+    sm_draw_label(cr, LABELS[i], 30, SM_LABEL_RGBA, SM_LABEL_FONT_SIZE);
+    cairo_restore(cr);
+    x += SM_LABEL_PX;
+    cairo_save(cr);
+    cairo_translate(cr, x, 0);
     sm_chart_draw(&app->charts[i], cr, app->bg);
     cairo_restore(cr);
     x += widths[i];
   }
+}
+
+static gboolean on_draw(GtkWidget *w, cairo_t *cr, gpointer data) {
+  (void)w;
+  composite(data, cr);
   return FALSE;
 }
 
 static void snapshot(App *app, const char *path) {
-  cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 308, 30);
+  cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 350, 30);  // 3 x (14 label + 100 chart) + 2 x 4 spacing;
   cairo_t *cr = cairo_create(s);
   // Transparent base like a bar; charts paint their own bg.
   cairo_set_source_rgba(cr, 0.21, 0.21, 0.21, 1.0);
   cairo_paint(cr);
-  int widths[3] = {100, 100, 100};
-  double x = 0;
-  for (int i = 0; i < 3; i++) {
-    if (i) x += 4;
-    cairo_save(cr);
-    cairo_translate(cr, x, 0);
-    sm_chart_draw(&app->charts[i], cr, app->bg);
-    cairo_restore(cr);
-    x += widths[i];
-  }
+  composite(app, cr);
   cairo_surface_write_to_png(s, path);
   cairo_destroy(cr);
   cairo_surface_destroy(s);
@@ -84,12 +86,12 @@ int main(int argc, char **argv) {
   sm_chart_init(&app.charts[2], 100, 30, NET_COLORS, 5, -1.0);
   GtkWidget *win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
   gtk_window_set_title(GTK_WINDOW(win), "sysmon-visualtest");
-  gtk_window_set_default_size(GTK_WINDOW(win), 308, 30);
+  gtk_window_set_default_size(GTK_WINDOW(win), 350, 30);
   gtk_window_set_decorated(GTK_WINDOW(win), FALSE);
   gtk_window_stick(GTK_WINDOW(win));
   gtk_window_set_keep_above(GTK_WINDOW(win), TRUE);
   app.area = gtk_drawing_area_new();
-  gtk_widget_set_size_request(app.area, 308, 30);
+  gtk_widget_set_size_request(app.area, 350, 30);
   g_signal_connect(app.area, "draw", G_CALLBACK(on_draw), &app);
   gtk_container_add(GTK_CONTAINER(win), app.area);
   g_signal_connect(win, "destroy", G_CALLBACK(gtk_main_quit), NULL);

@@ -68,6 +68,10 @@ Keys after `module_path` are optional (defaults shown above):
 | `interval_ms` | `1000` | Repaint/sample tick in ms (minimum `250`) |
 | `background` | `#ffffff16` | Chart background (`#rrggbb` or `#rrggbbaa`) |
 | `graphs` | cpu, memory, net | Subset to display, in canonical order |
+| `show_label` | `true` | Small monospace label before each graph, rotated 90° CCW to save space |
+| `label_cpu` | `cpu` | Label text for the cpu graph |
+| `label_memory` | `mem` | Label text for the memory graph |
+| `label_net` | `net` | Label text for the net graph |
 | `refresh_cpu_ms` | `1500` | CPU sample period (minimum `250`) |
 | `refresh_memory_ms` | `5000` | Memory sample period |
 | `refresh_net_ms` | `1000` | Network sample period |
@@ -75,7 +79,9 @@ Keys after `module_path` are optional (defaults shown above):
 | `colors_memory` | GNOME default (3 layers) | Exactly 3 entries |
 | `colors_net` | GNOME default (5 layers) | Exactly 5 entries |
 
-Wrong-sized color arrays keep the defaults. CPU colors (bottom to top):
+Wrong-sized color arrays keep the defaults. Labels render vertically
+(bottom-to-top) in a 14 px slot; text longer than the bar height is
+truncated. CPU colors (bottom to top):
 user, system, nice, iowait, other (`#0072b3` `#0092e6` `#00a3ff`
 `#002f3d` `#001d26`). Memory: program, buffer, cache (`#00b35b`
 `#00ff82` `#aaf5d0`). Net: down, downerrors, up, uperrors, collisions
@@ -99,7 +105,7 @@ make -C cffi test   # chart/collector unit tests, incl. bit-exact check vs the G
 `make -C cffi visualtest` builds a standalone GTK window harness rendering
 the same charts (useful where screenshots cannot see layer-shell).
 
-Current limits: cpu / memory / net only, graphs without labels or
+Current limits: cpu / memory / net only, graphs with labels but no
 tooltips, no HiDPI scaling yet. The module targets Waybar's CFFI ABI v2
 (header vendored in `cffi/waybar_cffi_module.h`); if Waybar ever requires
 a newer ABI, the module refuses to load with an error instead of
