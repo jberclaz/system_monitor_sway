@@ -63,8 +63,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # version.py resolves the version from git tags
+      - name: Install build dependencies
+        run: >
+          sudo apt-get update -q &&
+          sudo apt-get install -y -q gcc make pkg-config libgtk-3-dev
       - name: Read version from tag
-        run: echo "VERSION=$(python3 packaging/version.py)" >> "$GITHUB_ENV"
+        # nfpm needs a clean version: strip any +N.gSHA local suffix.
+        run: echo "VERSION=$(python3 packaging/version.py | cut -d+ -f1)" >> "$GITHUB_ENV"
       - name: Install nfpm
         run: |
           curl -sSL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" -o /tmp/nfpm.tar.gz
