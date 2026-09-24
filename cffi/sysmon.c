@@ -34,6 +34,7 @@ static const char *CPU_COLORS[] = {"#0072b3", "#0092e6", "#00a3ff", "#002f3d",
 static const char *MEM_COLORS[] = {"#00b35b", "#00ff82", "#aaf5d0"};
 static const char *NET_COLORS[] = {"#fce94f", "#ff6e00", "#fb74fb", "#e0006e",
                                    "#ff0000"};
+static const char *DISK_COLORS[] = {"#c65000", "#ff6700"};
 
 typedef struct {
   const char *name;
@@ -47,6 +48,7 @@ static const GraphSpec GRAPH_SPECS[] = {
     {"cpu", CPU_COLORS, 5, 100.0, 1500},
     {"memory", MEM_COLORS, 3, -1.0, 5000},
     {"net", NET_COLORS, 5, -1.0, 1000},
+    {"disk", DISK_COLORS, 2, -1.0, 2000},
 };
 #define N_SPECS (int)(sizeof(GRAPH_SPECS) / sizeof(GRAPH_SPECS[0]))
 
@@ -76,6 +78,7 @@ typedef struct {
   int warmup_left;  // fast-tick burst filling history right after startup
   CpuState cpu;
   NetState net;
+  DiskState disk;
 } Sysmon;
 
 // --- minimal JSON helpers (ABI v2 values are JSON-encoded) -------------------
@@ -209,13 +212,19 @@ static void sample_one(Sysmon *sm, Graph *g) {
       sm_chart_push(&g->chart, vals);
       g->pushed = 1;
     }
-  } else if (strcmp(g->spec->name, "net") == 0) {
-    double vals[5];
-    if (net_sample(&sm->net, vals)) {
-      sm_chart_push(&g->chart, vals);
-      g->pushed = 1;
+    } else if (strcmp(g->spec->name, "net") == 0) {
+      double vals[5];
+      if (net_sample(&sm->net, vals)) {
+        sm_chart_push(&g->chart, vals);
+        g->pushed = 1;
+      }
+    } else if (strcmp(g->spec->name, "disk") == 0) {
+      double vals[2];
+      if (disk_sample(&sm->disk, vals)) {
+        sm_chart_push(&g->chart, vals);
+        g->pushed = 1;
+      }
     }
-  }
 }
 
 static void sample_graphs(Sysmon *sm) {
@@ -338,10 +347,11 @@ WBCFFI_EXPORT void *wbcffi_init(const wbcffi_init_info *init_info,
     sm_parse_color("#ffffff16", &sm->bg);
 
   // Label defaults mirror the old overlay (memory shortens to "mem").
-  static const char *default_labels[N_SPECS] = {"cpu", "mem", "net"};
+  static const char *default_labels[N_SPECS] = {"cpu", "mem", "net", "disk"};
   int show_label = cfg_bool(config_entries, config_entries_len, "show_label", 1);
   // Enabled graphs, in canonical order.
-  char wanted[][32] = {{0}, {0}, {0}};
+  char wanted[N_SPECS][32];
+  memset(wanted, 0, sizeof(wanted));
   int n_wanted =
       cfg_str_array(config_entries, config_entries_len, "graphs", wanted, N_SPECS);
   for (int i = 0; i < N_SPECS && sm->n_graphs < N_SPECS; i++) {

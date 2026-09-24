@@ -1,6 +1,6 @@
 .TH WAYBAR-SYSMON 1 "2026-09-23" "system-monitor-sway" "User Commands"
 .SH NAME
-waybar-sysmon \- stacked CPU/memory/network graphs as a native Waybar module
+waybar-sysmon \- stacked CPU/memory/network/disk graphs as a native Waybar module
 .SH SYNOPSIS
 Load
 .I /usr/lib/system-monitor-sway/waybar_sysmon.so
@@ -15,7 +15,7 @@ via its CFFI plugin API: no overlay window, no image file, no scripting
 runtime. Placement, fullscreen behavior and stacking belong to Waybar and
 Sway, so graphs are covered by fullscreen windows automatically.
 .PP
-First cut: cpu, memory and net graphs only, with labels but no tooltips.
+First cut: cpu, memory, net and disk graphs, with labels but no tooltips.
 .SS Waybar configuration
 Merge
 .I /usr/share/system-monitor-sway/waybar-config-example.jsonc
@@ -30,7 +30,7 @@ into
   "spacing": 4,
   "interval_ms": 1000,
   "background": "#ffffff16",
-  "graphs": ["cpu", "memory", "net"]
+  "graphs": ["cpu", "memory", "net", "disk"]
 }
 .EE
 All keys after
@@ -45,16 +45,18 @@ set
 .I show_label
 to false to hide them). Labels render vertically (bottom-to-top) in a
 14 px slot; text longer than the bar height is truncated. Refresh periods default to cpu 1500 ms, memory 5000 ms, net
-1000 ms (minimum 250 ms) via
+1000 ms, disk 2000 ms (minimum 250 ms) via
 .IR refresh_cpu_ms ,
 .IR refresh_memory_ms ,
-.IR refresh_net_ms .
+.IR refresh_net_ms ,
+.IR refresh_disk_ms .
 Chart colors default to the GNOME applet palette and can be overridden
 with
 .IR colors_cpu ,
 .IR colors_memory ,
-.IR colors_net
-(arrays of exactly 5 / 3 / 5
+.IR colors_net ,
+.IR colors_disk
+(arrays of exactly 5 / 3 / 5 / 2
 .IR #rrggbb
 entries; a wrong-sized array keeps the defaults).
 .SH ENVIRONMENT

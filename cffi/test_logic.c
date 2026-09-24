@@ -174,10 +174,19 @@ static void test_collectors_live(void) {
   assert(net_sample(&net, out5) == 1);
   for (int i = 0; i < 5; i++) assert(out5[i] >= 0.0);
 
+  DiskState disk;
+  memset(&disk, 0, sizeof(disk));
+  double out2[2];
+  assert(disk_sample(&disk, out2) == 0);  // primes
+  nanosleep(&req, NULL);
+  assert(disk_sample(&disk, out2) == 1);
+  assert(out2[0] >= 0.0 && out2[1] >= 0.0);
+
   // NULL guards never crash.
   assert(cpu_sample(NULL, out5) == 0);
   assert(mem_sample(NULL) == 0);
   assert(net_sample(NULL, out5) == 0);
+  assert(disk_sample(NULL, out2) == 0);
 }
 
 int main(void) {

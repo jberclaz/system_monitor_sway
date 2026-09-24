@@ -94,6 +94,59 @@ int mem_sample(double out[3]) {
   return 1;
 }
 
+// --- disk --------------------------------------------------------------------
+
+static int read_disk_totals(unsigned long long acc[2]) {
+  FILE *fp = fopen("/proc/diskstats", "r");
+  if (!fp) return -1;
+  char line[512];
+  acc[0] = acc[1] = 0;
+  while (fgets(line, sizeof(line), fp)) {
+    // Tokens: major minor name, then counters. sectors_read is counter 2,
+    // sectors_written counter 6 (== entry[5] / entry[9] in collectors.py,
+    // which counts major/minor/name). Sums every line incl. partitions,
+    // mirroring collectors.py.
+    char *save = NULL;
+    if (!strtok_r(line, " \t\n", &save)) continue;    // major
+    if (!strtok_r(NULL, " \t\n", &save)) continue;    // minor
+    if (!strtok_r(NULL, " \t\n", &save)) continue;    // name
+    unsigned long long f[18] = {0};
+    int n = 0;
+    char *tok;
+    while (n < 18 && (tok = strtok_r(NULL, " \t\n", &save)) != NULL) {
+      f[n++] = strtoull(tok, NULL, 10);
+    }
+    if (n < 7) continue;
+    acc[0] += f[2];  // sectors read
+    acc[1] += f[6];  // sectors written
+  }
+  fclose(fp);
+  return 0;
+}
+
+int disk_sample(DiskState *s, double out[2]) {
+  if (!s || !out) return 0;
+  unsigned long long cur[2];
+  if (read_disk_totals(cur) != 0) return 0;
+  double t = sm_mono_seconds();
+  if (t < 0) return 0;
+  if (!s->have_last) {
+    memcpy(s->last, cur, sizeof(cur));
+    s->last_time = t;
+    s->have_last = 1;
+    return 0;
+  }
+  double dt = t - s->last_time;
+  if (dt <= 0) return 0;
+  for (int i = 0; i < 2; i++) {
+    // GNOME Disk.refresh: sectors/s / 1024 / 8 (labeled MiB/s).
+    out[i] = (double)(cur[i] - s->last[i]) / dt / 1024.0 / 8.0;
+    s->last[i] = cur[i];
+  }
+  s->last_time = t;
+  return 1;
+}
+
 // --- net -------------------------------------------------------------------
 
 static int iface_up(const char *name) {

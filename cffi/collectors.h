@@ -29,6 +29,16 @@ typedef struct {
 } NetState;
 int net_sample(NetState *s, double out[5]);
 
+// out: [read_MiBps, write_MiBps] from /proc/diskstats sector deltas
+// (sectors/s / 1024 / 8, labeled MiB/s like the GNOME applet).
+// Returns 1 with data, 0 when priming or on read error.
+typedef struct {
+  unsigned long long last[2];
+  double last_time;
+  int have_last;
+} DiskState;
+int disk_sample(DiskState *s, double out[2]);
+
 double sm_mono_seconds(void);
 
 #ifdef __cplusplus

@@ -1,7 +1,7 @@
 # system-monitor-sway
 
-Stacked CPU, memory and network graphs for **Sway**, drawn directly inside
-**Waybar** as a native module — matching
+Stacked CPU, memory, network and disk graphs for **Sway**, drawn directly
+inside **Waybar** as a native module — matching
 [gnome-shell-system-monitor-applet](https://github.com/paradoxxxzero/gnome-shell-system-monitor-applet).
 No overlay window, no image file, no scripting runtime: Waybar owns the
 pixels, so placement, fullscreen behavior and stacking just work (a
@@ -72,12 +72,15 @@ Keys after `module_path` are optional (defaults shown above):
 | `label_cpu` | `cpu` | Label text for the cpu graph |
 | `label_memory` | `mem` | Label text for the memory graph |
 | `label_net` | `net` | Label text for the net graph |
+| `label_disk` | `disk` | Label text for the disk graph |
 | `refresh_cpu_ms` | `1500` | CPU sample period (minimum `250`) |
 | `refresh_memory_ms` | `5000` | Memory sample period |
 | `refresh_net_ms` | `1000` | Network sample period |
+| `refresh_disk_ms` | `2000` | Disk sample period |
 | `colors_cpu` | GNOME default (5 layers) | One `#rrggbb` per layer, exactly 5 entries |
 | `colors_memory` | GNOME default (3 layers) | Exactly 3 entries |
 | `colors_net` | GNOME default (5 layers) | Exactly 5 entries |
+| `colors_disk` | GNOME default (2 layers) | Exactly 2 entries |
 
 Wrong-sized color arrays keep the defaults. Labels render vertically
 (bottom-to-top) in a 14 px slot; text longer than the bar height is
@@ -85,9 +88,10 @@ truncated. CPU colors (bottom to top):
 user, system, nice, iowait, other (`#0072b3` `#0092e6` `#00a3ff`
 `#002f3d` `#001d26`). Memory: program, buffer, cache (`#00b35b`
 `#00ff82` `#aaf5d0`). Net: down, downerrors, up, uperrors, collisions
-(`#fce94f` `#ff6e00` `#fb74fb` `#e0006e` `#ff0000`).
+(`#fce94f` `#ff6e00` `#fb74fb` `#e0006e` `#ff0000`). Disk: read, write
+(`#c65000` `#ff6700`).
 
-CPU and network sample `/proc` differentially (first tick primes, graphs
+CPU, network and disk sample `/proc` differentially (first tick primes, graphs
 fill right-to-left); memory is stateless. On startup the module samples
 at 100 ms for ~6 s so the charts arrive populated, then settles into the
 configured periods.
@@ -105,7 +109,7 @@ make -C cffi test   # chart/collector unit tests, incl. bit-exact check vs the G
 `make -C cffi visualtest` builds a standalone GTK window harness rendering
 the same charts (useful where screenshots cannot see layer-shell).
 
-Current limits: cpu / memory / net only, graphs with labels but no
+Current limits: cpu / memory / net / disk only, graphs with labels but no
 tooltips, no HiDPI scaling yet. The module targets Waybar's CFFI ABI v2
 (header vendored in `cffi/waybar_cffi_module.h`); if Waybar ever requires
 a newer ABI, the module refuses to load with an error instead of
