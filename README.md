@@ -7,6 +7,8 @@ No overlay window, no image file, no scripting runtime: Waybar owns the
 pixels, so placement, fullscreen behavior and stacking just work (a
 fullscreen video covers the bar, graphs included).
 
+![screenshot](doc/example.png)
+
 ## Install
 
 ### 1. Packages
