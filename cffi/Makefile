@@ -6,7 +6,11 @@
 # (collectors read /proc directly).
 CC ?= gcc
 CFLAGS ?= -O2
+# Version: git tag wins, VERSION file is the offline fallback.
+VERSION := $(shell git describe --tags --match 'v[0-9]*' 2>/dev/null | sed 's/^v//;s/-\([0-9][0-9]*\)-g\([0-9a-f]*\)/+\1.g\2/')
+ifeq ($(VERSION),)
 VERSION := $(shell cat ../VERSION 2>/dev/null || echo 0.0.0-dev)
+endif
 CFLAGS += -DSYSMON_VERSION='"$(VERSION)"'
 WARN = -Wall -Wextra -Wpedantic -Wno-unused-parameter
 GTK_CFLAGS := $(shell pkg-config --cflags gtk+-3.0)

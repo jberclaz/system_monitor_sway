@@ -1,9 +1,20 @@
 # Packaging
 
-Single source of truth for the version: the `VERSION` file at the repo
-root (mirrored in `packaging/aur/PKGBUILD`, `packaging/aur/.SRCINFO`,
-`packaging/fedora/*.spec`, man page header). Bump all of them together
-when tagging `vX.Y.Z` (`python3 packaging/version.py bump 0.2.0`).
+Single source of truth for the version: the **git tag** (`vX.Y.Z`).
+`packaging/version.py` resolves it via `git describe` (falling back to
+the `VERSION` file without git metadata, then `0.0.0-dev`). Distro files
+that need static versions (`PKGBUILD`, `.SRCINFO`, `.spec`) are stamped
+from the tag — never hand-edited:
+
+```bash
+python3 packaging/version.py check   # stamps agree with the tag?
+python3 packaging/version.py sync    # stamp the tag into distro files
+python3 packaging/version.py bump 0.2.0  # create tag v0.2.0 (push it yourself)
+git push origin v0.2.0               # CI stamps, builds, publishes
+```
+
+The man page header carries the release date, not the version, so it
+needs no stamping.
 
 ## Arch Linux (AUR)
 
@@ -36,6 +47,9 @@ Spec lives in `packaging/fedora/system-monitor-sway.spec`
 ```bash
 # local smoke test (needs rpmbuild):
 rpmbuild -ba packaging/fedora/system-monitor-sway.spec
+# release build from the stamped GitHub release tarball:
+#   1. `git push origin vX.Y.Z` (CI attaches system-monitor-sway-vX.Y.Z.tar.gz)
+#   2. point COPR at that tarball; the .spec inside already carries the tag
 # COPR web UI or CLI:
 copr-cli create system-monitor-sway --chroot fedora-43-x86_64 --chroot fedora-44-x86_64
 copr-cli build system-monitor-sway --now packaging/fedora/system-monitor-sway.spec

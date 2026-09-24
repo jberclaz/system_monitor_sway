@@ -5,6 +5,10 @@
   shell invocation: pkill matches the invoking shell's own cmdline and kills
   it (looks like a tool timeout). Use bracket patterns (`pkill -f "[w]btest"`)
   AND keep pkill in a separate tool call from any literal target path.
+- `commit.gpgsign`/`tag.gpgsign` hang without a TTY (pinentry/editor). For
+  commits use one-off `--no-gpg-sign` (never change user config); for tags,
+  `tag.gpgsign=true` forces annotated tags so always pass `-m` (avoids the
+  editor; signing still honored when an agent is available).
 
 ## Waybar CFFI module (cffi/)
 - `wbcffi_deinit` is MANDATORY: if the `.so` doesn't export it (e.g. eaten by
