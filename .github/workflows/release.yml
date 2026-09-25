@@ -39,8 +39,10 @@ jobs:
         run: >
           sudo apt-get update -q &&
           sudo apt-get install -y -q gcc make pkg-config libgtk-3-dev groff
-      - name: Versions in sync with tag
-        run: python3 packaging/version.py check
+      - name: Stamp version from tag and verify
+        run: |
+          python3 packaging/version.py sync
+          python3 packaging/version.py check
       - name: Build warning-free
         run: make -C cffi
       - name: Unit tests
