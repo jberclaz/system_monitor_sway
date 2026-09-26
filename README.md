@@ -71,6 +71,7 @@ Keys after `module_path` are optional (defaults shown above):
 | `background` | `#ffffff16` | Chart background (`#rrggbb` or `#rrggbbaa`) |
 | `graphs` | cpu, memory, net | Subset to display, in canonical order |
 | `show_label` | `true` | Small monospace label before each graph, rotated 90° CCW to save space |
+| `show_tooltip` | `true` | Per-graph hover tooltip with the latest breakdown (cpu %, memory %, net rates, disk MiB/s) |
 | `label_cpu` | `cpu` | Label text for the cpu graph |
 | `label_memory` | `mem` | Label text for the memory graph |
 | `label_net` | `net` | Label text for the net graph |
@@ -111,8 +112,7 @@ make -C cffi test   # chart/collector unit tests, incl. bit-exact check vs the G
 `make -C cffi visualtest` builds a standalone GTK window harness rendering
 the same charts (useful where screenshots cannot see layer-shell).
 
-Current limits: cpu / memory / net / disk only, graphs with labels but no
-tooltips, no HiDPI scaling yet. The module targets Waybar's CFFI ABI v2
+Current limits: cpu / memory / net / disk only, no HiDPI scaling yet. The module targets Waybar's CFFI ABI v2
 (header vendored in `cffi/waybar_cffi_module.h`); if Waybar ever requires
 a newer ABI, the module refuses to load with an error instead of
 misrendering.

@@ -6,7 +6,8 @@
 // no Python at runtime, no fullscreen workaround: Sway covers Waybar (and
 // with it our graphs) automatically.
 //
-// First cut: cpu / memory / net graphs only, no labels, no tooltips.
+// First cut: cpu / memory / net / disk graphs with labels and per-graph
+// hover tooltips (native GTK query-tooltip).
 // All state lives in Sysmon (no globals) so multi-output bars work.
 #include "waybar_cffi_module.h"
 
@@ -17,6 +18,7 @@
 #include "chart.h"
 #include "collectors.h"
 #include "strip.h"
+#include "tooltip.h"
 
 #ifndef SYSMON_VERSION
 #define SYSMON_VERSION "unknown"
@@ -61,6 +63,8 @@ typedef struct {
   int pushed;             // set when the latest sample produced data
   int show_label;
   char label[32];
+  double last_vals[5];  // latest sample feeding the hover tooltip
+  int have_tip;         // set once last_vals holds real data
 } Graph;
 
 typedef struct {
@@ -76,6 +80,7 @@ typedef struct {
   guint timer_id;
   int interval_ms;
   int warmup_left;  // fast-tick burst filling history right after startup
+  int show_tooltip;
   CpuState cpu;
   NetState net;
   DiskState disk;
@@ -205,24 +210,34 @@ static void sample_one(Sysmon *sm, Graph *g) {
     if (cpu_sample(&sm->cpu, vals)) {
       sm_chart_push(&g->chart, vals);
       g->pushed = 1;
+      memcpy(g->last_vals, vals, sizeof(vals));
+      g->have_tip = 1;
     }
   } else if (strcmp(g->spec->name, "memory") == 0) {
     double vals[3];
     if (mem_sample(vals)) {
       sm_chart_push(&g->chart, vals);
       g->pushed = 1;
+      memcpy(g->last_vals, vals, sizeof(vals));
+      memset(g->last_vals + 3, 0, sizeof(double) * 2);
+      g->have_tip = 1;
     }
     } else if (strcmp(g->spec->name, "net") == 0) {
       double vals[5];
       if (net_sample(&sm->net, vals)) {
         sm_chart_push(&g->chart, vals);
         g->pushed = 1;
+        memcpy(g->last_vals, vals, sizeof(vals));
+        g->have_tip = 1;
       }
     } else if (strcmp(g->spec->name, "disk") == 0) {
       double vals[2];
       if (disk_sample(&sm->disk, vals)) {
         sm_chart_push(&g->chart, vals);
         g->pushed = 1;
+        memcpy(g->last_vals, vals, sizeof(vals));
+        memset(g->last_vals + 2, 0, sizeof(double) * 3);
+        g->have_tip = 1;
       }
     }
 }
@@ -307,6 +322,40 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cr, gpointer data) {
   return FALSE;
 }
 
+static gboolean on_query_tooltip(GtkWidget *widget, gint x, gint y,
+                                   gboolean keyboard_mode,
+                                   GtkTooltip *tooltip, gpointer data) {
+  (void)widget;
+  (void)y;
+  Sysmon *sm = data;
+  int idx = -1;
+  if (keyboard_mode) {
+    // Keyboard tooltip request carries no position: offer the first graph
+    // holding real data so keyboard users still reach the breakdowns.
+    for (int i = 0; i < sm->n_graphs; i++) {
+      if (sm->graphs[i].have_tip) {
+        idx = i;
+        break;
+      }
+    }
+  } else {
+    int widths[N_SPECS];
+    int labels[N_SPECS];
+    for (int i = 0; i < sm->n_graphs; i++) {
+      widths[i] = sm->graphs[i].width;
+      labels[i] = sm->graphs[i].show_label;
+    }
+    idx = sm_graph_at_x(x, sm->n_graphs, widths, labels, sm->spacing);
+  }
+  if (idx < 0 || idx >= sm->n_graphs || !sm->graphs[idx].have_tip) return FALSE;
+  char text[256];
+  if (sm_tooltip_text(sm->graphs[idx].spec->name, sm->graphs[idx].last_vals,
+                      text, sizeof(text)) != 0)
+    return FALSE;
+  gtk_tooltip_set_text(tooltip, text);
+  return TRUE;
+}
+
 // --- CFFI entry points --------------------------------------------------------
 #define WBCFFI_EXPORT __attribute__((visibility("default")))
 
@@ -349,6 +398,8 @@ WBCFFI_EXPORT void *wbcffi_init(const wbcffi_init_info *init_info,
   // Label defaults mirror the old overlay (memory shortens to "mem").
   static const char *default_labels[N_SPECS] = {"cpu", "mem", "net", "disk"};
   int show_label = cfg_bool(config_entries, config_entries_len, "show_label", 1);
+  sm->show_tooltip =
+      cfg_bool(config_entries, config_entries_len, "show_tooltip", 1);
   // Enabled graphs, in canonical order.
   char wanted[N_SPECS][32];
   memset(wanted, 0, sizeof(wanted));
@@ -425,6 +476,11 @@ WBCFFI_EXPORT void *wbcffi_init(const wbcffi_init_info *init_info,
   }
   gtk_widget_set_size_request(sm->area, total_w, sm->height);
   g_signal_connect(sm->area, "draw", G_CALLBACK(on_draw), sm);
+  if (sm->show_tooltip) {
+    gtk_widget_set_has_tooltip(sm->area, TRUE);
+    g_signal_connect(sm->area, "query-tooltip", G_CALLBACK(on_query_tooltip),
+                     sm);
+  }
   gtk_container_add(GTK_CONTAINER(box), sm->area);
   gtk_container_add(root, box);
   gtk_widget_show_all(box);

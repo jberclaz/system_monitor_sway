@@ -15,7 +15,8 @@ via its CFFI plugin API: no overlay window, no image file, no scripting
 runtime. Placement, fullscreen behavior and stacking belong to Waybar and
 Sway, so graphs are covered by fullscreen windows automatically.
 .PP
-First cut: cpu, memory, net and disk graphs, with labels but no tooltips.
+First cut: cpu, memory, net and disk graphs, with labels and per-graph
+hover tooltips.
 .SS Waybar configuration
 Merge
 .I /usr/share/system-monitor-sway/waybar-config-example.jsonc
@@ -43,7 +44,10 @@ order. Labels default to cpu, mem and net
 .IR label_net ;
 set
 .I show_label
-to false to hide them). Labels render vertically (bottom-to-top) in a
+to false to hide them). Hovering a graph shows its latest breakdown
+(cpu/memory percentages, net rates and error counters, disk MiB/s); set
+.I show_tooltip
+to false to disable. Labels render vertically (bottom-to-top) in a
 14 px slot; text longer than the bar height is truncated. Refresh periods default to cpu 1500 ms, memory 5000 ms, net
 1000 ms, disk 2000 ms (minimum 250 ms) via
 .IR refresh_cpu_ms ,
