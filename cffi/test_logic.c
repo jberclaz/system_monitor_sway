@@ -9,6 +9,7 @@
 #include "chart.h"
 #include "collectors.h"
 #include "strip.h"
+#include "tooltip.h"
 
 static int dbl_eq(double a, double b) { return fabs(a - b) < 1e-9; }
 
@@ -148,6 +149,75 @@ static void test_label_draws_ink(void) {
   assert(sm_element_width(0, 100) == 100);
 }
 
+static void test_tooltip_text(void) {
+  char buf[256];
+  // cpu: percentages, GNOME "name  NN %" lines.
+  double cpu[] = {10.4, 5.5, 0.2, 2.0, 3.0};
+  assert(sm_tooltip_text("cpu", cpu, buf, sizeof(buf)) == 0);
+  assert(strcmp(buf,
+                "user  10 %\nsystem  6 %\nnice  0 %\niowait  2 %\nother  3 %") ==
+         0);
+  // memory: fractions -> percent.
+  double mem[] = {0.354, 0.05, 0.2};
+  assert(sm_tooltip_text("memory", mem, buf, sizeof(buf)) == 0);
+  assert(strcmp(buf, "program  35 %\nbuffer  5 %\ncache  20 %") == 0);
+  // net inputs are B/s (the old overlay formatted ~KiB/s, hence /1024).
+  double net[] = {512.0 * 1024.0, 3.9, 2.0 * 1024.0 * 1024.0, 1.2, 7.9};
+  assert(sm_tooltip_text("net", net, buf, sizeof(buf)) == 0);
+  assert(strcmp(buf,
+                "down  512 KiB/s\ndownerrors  3 /s\nup  2 MiB/s\n"
+                "uperrors  1 /s\ncollisions  7 /s") == 0);
+  // net unit boundaries: just under 1024 KiB/s stays KiB/s, at 1024 -> MiB/s.
+  double edge[] = {1023.4 * 1024.0, 0, 1024.0 * 1024.0, 0, 0};
+  assert(sm_tooltip_text("net", edge, buf, sizeof(buf)) == 0);
+  assert(strstr(buf, "down  1023 KiB/s") != NULL);
+  assert(strstr(buf, "up  1 MiB/s") != NULL);
+  double gibi[] = {0, 0, 2.0 * 1048576.0 * 1024.0, 0, 0};
+  assert(sm_tooltip_text("net", gibi, buf, sizeof(buf)) == 0);
+  assert(strstr(buf, "up  2 GiB/s") != NULL);
+  // disk: <10 keeps one decimal, >=10 rounds to int.
+  double disk[] = {1.234, 12.6};
+  assert(sm_tooltip_text("disk", disk, buf, sizeof(buf)) == 0);
+  assert(strcmp(buf, "read  1.2 MiB/s\nwrite  13 MiB/s") == 0);
+  double disk_edge[] = {9.96, 10.0};
+  assert(sm_tooltip_text("disk", disk_edge, buf, sizeof(buf)) == 0);
+  assert(strcmp(buf, "read  10.0 MiB/s\nwrite  10 MiB/s") == 0);
+  // guards: bad name, NULLs, and a cap too small for even one line.
+  assert(sm_tooltip_text("swap", cpu, buf, sizeof(buf)) == -1);
+  assert(sm_tooltip_text(NULL, cpu, buf, sizeof(buf)) == -1);
+  assert(sm_tooltip_text("cpu", NULL, buf, sizeof(buf)) == -1);
+  assert(sm_tooltip_text("cpu", cpu, NULL, sizeof(buf)) == -1);
+  assert(sm_tooltip_text("cpu", cpu, buf, 0) == -1);
+  char tiny[8];
+  assert(sm_tooltip_text("cpu", cpu, tiny, sizeof(tiny)) == -1);
+}
+
+static void test_graph_at_x(void) {
+  // Two labeled 100px graphs with spacing 4: [0,114) [114,118) [118,232).
+  int widths[] = {100, 100};
+  int labels[] = {1, 1};
+  assert(sm_graph_at_x(0, 2, widths, labels, 4) == 0);
+  assert(sm_graph_at_x(13, 2, widths, labels, 4) == 0);   // label slot
+  assert(sm_graph_at_x(14, 2, widths, labels, 4) == 0);   // chart start
+  assert(sm_graph_at_x(113, 2, widths, labels, 4) == 0);
+  assert(sm_graph_at_x(114, 2, widths, labels, 4) == -1);  // spacing gap
+  assert(sm_graph_at_x(117, 2, widths, labels, 4) == -1);
+  assert(sm_graph_at_x(118, 2, widths, labels, 4) == 1);
+  assert(sm_graph_at_x(231, 2, widths, labels, 4) == 1);
+  assert(sm_graph_at_x(232, 2, widths, labels, 4) == -1);
+  assert(sm_graph_at_x(-1, 2, widths, labels, 4) == -1);
+  // Unlabeled single graph: [0,100).
+  int w1[] = {100};
+  int l0[] = {0};
+  assert(sm_graph_at_x(0, 1, w1, l0, 4) == 0);
+  assert(sm_graph_at_x(99, 1, w1, l0, 4) == 0);
+  assert(sm_graph_at_x(100, 1, w1, l0, 4) == -1);
+  // guards never crash.
+  assert(sm_graph_at_x(0, 0, widths, labels, 4) == -1);
+  assert(sm_graph_at_x(0, 2, NULL, labels, 4) == -1);
+  assert(sm_graph_at_x(0, 2, widths, NULL, 4) == -1);
+}
+
 static void test_collectors_live(void) {
   CpuState cpu;
   memset(&cpu, 0, sizeof(cpu));
@@ -196,6 +266,8 @@ int main(void) {
   test_parse_color();
   test_against_python_reference();
   test_label_draws_ink();
+  test_tooltip_text();
+  test_graph_at_x();
   test_collectors_live();
   printf("cffi logic tests: OK\n");
   return 0;

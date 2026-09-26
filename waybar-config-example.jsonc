@@ -12,7 +12,8 @@
     "interval_ms": 1000,
     "background": "#ffffff16",
     "graphs": ["cpu", "memory", "net", "disk"],
-    "show_label": true
+    "show_label": true,
+    "show_tooltip": true
     // Optional: "label_cpu" ("cpu"), "label_memory" ("mem"),
     // "label_net" ("net"), "label_disk" ("disk");
     // "refresh_cpu_ms" (1500), "refresh_memory_ms" (5000),

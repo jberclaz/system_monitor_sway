@@ -10,6 +10,19 @@ int sm_element_width(int show_label, int graph_width) {
   return (show_label ? SM_LABEL_PX : 0) + graph_width;
 }
 
+int sm_graph_at_x(int x, int n_graphs, const int *widths,
+                  const int *show_labels, int spacing) {
+  if (x < 0 || n_graphs <= 0 || !widths || !show_labels) return -1;
+  int cursor = 0;
+  for (int i = 0; i < n_graphs; i++) {
+    if (i > 0) cursor += spacing;
+    int w = sm_element_width(show_labels[i], widths[i]);
+    if (x >= cursor && x < cursor + w) return i;
+    cursor += w;
+  }
+  return -1;
+}
+
 void sm_draw_label(cairo_t *cr, const char *text, double height, SmColor color,
                    double font_size) {
   if (!cr || !text || !*text || font_size <= 0 || height <= 0) return;

@@ -21,6 +21,13 @@ extern const SmColor SM_LABEL_RGBA;
 // Width of one element: label slot (if shown) + chart.
 int sm_element_width(int show_label, int graph_width);
 
+// Maps a widget-relative x coordinate to its graph index (label slot counts
+// as part of its graph; spacing gaps belong to no graph). Returns the index
+// or -1. Mirrors the layout in sysmon.c on_draw so hover hit-testing and
+// painting never disagree.
+int sm_graph_at_x(int x, int n_graphs, const int *widths,
+                  const int *show_labels, int spacing);
+
 // Draws `text` rotated 90 deg CCW, centered in a SM_LABEL_PX-wide slot at
 // the current origin, for a strip of `height` px. Text longer than the
 // strip height is truncated. No-op on NULL/empty text.
